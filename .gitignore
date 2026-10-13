@@ -1,0 +1,6 @@
+
+aegis
+*.o
+*.out
+core
+.vscode/
