@@ -1,105 +1,144 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <ctype.h>
+#include <errno.h>
 #include <sys/resource.h>
 
-long get_total_cpu()
-{
-    FILE *file = fopen("/proc/stat", "r");
+#include "health.h"
 
-    if (file == NULL)
-        return 0;
+#define MAX_PROCESSES 256
+#define NAME_LENGTH 100
+
+typedef struct {
+    int pid;
+    char name[NAME_LENGTH];
+    char state;
+    long rss_kb;
+    long cpu_ticks;
+    int priority;
+    float cpu;
+    float memory;
+    int score;
+} ProcessInfo;
+
+static long read_total_cpu(void)
+{
+    FILE *fp = fopen("/proc/stat", "r");
+    if (!fp)
+        return -1;
 
     char line[512];
-    long user, nice, system, idle, iowait, irq, softirq, steal;
+    long total = 0;
+    long value;
 
-    fgets(line, sizeof(line), file);
-    fclose(file);
+    if (fgets(line, sizeof(line), fp)) {
+        char *p = line + 3;
 
-    sscanf(line, "cpu %ld %ld %ld %ld %ld %ld %ld %ld",
-           &user, &nice, &system, &idle,
-           &iowait, &irq, &softirq, &steal);
+        while (sscanf(p, "%ld", &value) == 1) {
+            total += value;
 
-    return user + nice + system + idle +
-           iowait + irq + softirq + steal;
-}
-
-long get_process_cpu(int pid)
-{
-    char path[512];
-
-    sprintf(path, "/proc/%d/stat", pid);
-
-    FILE *file = fopen(path, "r");
-
-    if (file == NULL)
-        return 0;
-
-    char line[2048];
-
-    if (fgets(line, sizeof(line), file) == NULL)
-    {
-        fclose(file);
-        return 0;
+            while (*p == ' ')
+                p++;
+            while (isdigit((unsigned char)*p))
+                p++;
+            while (*p == ' ')
+                p++;
+        }
     }
 
-    fclose(file);
+    fclose(fp);
+    return total;
+}
 
-    char *closing_bracket = strrchr(line, ')');
+static int read_process(ProcessInfo *proc)
+{
+    char path[128];
+    char line[2048];
 
-    if (closing_bracket == NULL)
-        return 0;
+    snprintf(path, sizeof(path), "/proc/%d/stat", proc->pid);
+    FILE *fp = fopen(path, "r");
 
-    char *data = closing_bracket + 2;
+    if (!fp)
+        return -1;
 
-    char state;
-    long values[20];
+    if (!fgets(line, sizeof(line), fp)) {
+        fclose(fp);
+        return -1;
+    }
+    fclose(fp);
 
-    int count = sscanf(data,
+    char *right = strrchr(line, ')');
+    if (!right || right[1] != ' ')
+        return -1;
+
+    long v[20] = {0};
+    int n = sscanf(
+        right + 2,
         "%c %ld %ld %ld %ld %ld %ld %ld %ld %ld "
         "%ld %ld %ld %ld %ld %ld %ld %ld %ld %ld",
-        &state,
-        &values[0], &values[1], &values[2], &values[3],
-        &values[4], &values[5], &values[6], &values[7],
-        &values[8], &values[9], &values[10], &values[11],
-        &values[12], &values[13], &values[14], &values[15],
-        &values[16], &values[17], &values[18]);
+        &proc->state,
+        &v[0], &v[1], &v[2], &v[3], &v[4], &v[5],
+        &v[6], &v[7], &v[8], &v[9], &v[10], &v[11],
+        &v[12], &v[13], &v[14], &v[15], &v[16],
+        &v[17], &v[18]);
 
-    if (count < 14)
-        return 0;
+    if (n < 13)
+        return -1;
 
-    /*
-     * utime = field 14
-     * stime = field 15
-     */
-    return values[10] + values[11];
+    /* /proc/PID/stat fields 14 and 15: utime and stime. */
+    proc->cpu_ticks = v[10] + v[11];
+
+    snprintf(path, sizeof(path), "/proc/%d/status", proc->pid);
+    fp = fopen(path, "r");
+
+    if (!fp)
+        return -1;
+
+    snprintf(proc->name, sizeof(proc->name), "unknown");
+    proc->rss_kb = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "Name:", 5) == 0)
+            sscanf(line + 5, "%99s", proc->name);
+
+        if (strncmp(line, "VmRSS:", 6) == 0)
+            sscanf(line + 6, "%ld", &proc->rss_kb);
+    }
+
+    fclose(fp);
+
+    errno = 0;
+    proc->priority = getpriority(PRIO_PROCESS, proc->pid);
+
+    if (errno != 0)
+        return -1;
+
+    return 0;
 }
 
 int calculate_health(float cpu, float memory, char state, int priority)
 {
     int score = 100;
 
-    /* CPU penalty */
-    if (cpu > 80)
+    if (cpu > 90.0f)
         score -= 30;
-    else if (cpu > 50)
+    else if (cpu > 70.0f)
         score -= 15;
 
-    /* Memory penalty */
-    if (memory > 80)
+    if (memory > 20.0f)
         score -= 30;
-    else if (memory > 50)
+    else if (memory > 10.0f)
         score -= 15;
 
-    /* Process state */
     if (state == 'Z')
         score -= 40;
-    else if (state == 'T')
+    else if (state == 'T' || state == 't')
         score -= 20;
 
-    /* Very low priority */
     if (priority > 10)
         score -= 10;
 
@@ -109,143 +148,199 @@ int calculate_health(float cpu, float memory, char state, int priority)
     return score;
 }
 
-void show_health()
+static long read_rss_kb(int pid)
 {
-    DIR *dir = opendir("/proc");
+    char path[128], line[256];
+    snprintf(path, sizeof(path), "/proc/%d/status", pid);
 
-    if (dir == NULL)
-    {
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return -1;
+
+    long rss = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            sscanf(line + 6, "%ld", &rss);
+            break;
+        }
+    }
+
+    fclose(fp);
+    return rss;
+}
+
+int measure_process_health(int pid, float *cpu_out, float *memory_out)
+{
+    if (pid <= 1 || !cpu_out || !memory_out)
+        return -1;
+
+    ProcessInfo proc = {0};
+    proc.pid = pid;
+
+    if (read_process(&proc) != 0)
+        return -1;
+
+    long ticks_before = proc.cpu_ticks;
+    long total_before = read_total_cpu();
+
+    sleep(1);
+
+    ProcessInfo after = {0};
+    after.pid = pid;
+
+    if (read_process(&after) != 0)
+        return -1;
+
+    long total_after = read_total_cpu();
+
+    if (total_before < 0 || total_after <= total_before)
+        return -1;
+
+    long tick_delta = after.cpu_ticks - ticks_before;
+    if (tick_delta < 0)
+        return -1;
+
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_count < 1)
+        cpu_count = 1;
+
+    *cpu_out = (float)tick_delta * 100.0f /
+               (float)(total_after - total_before) *
+               (float)cpu_count;
+
+    long rss = read_rss_kb(pid);
+    if (rss < 0)
+        return -1;
+
+    FILE *fp = fopen("/proc/meminfo", "r");
+    if (!fp)
+        return -1;
+
+    long total_memory_kb = 0;
+    char line[256];
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "MemTotal:", 9) == 0) {
+            sscanf(line + 9, "%ld", &total_memory_kb);
+            break;
+        }
+    }
+
+    fclose(fp);
+
+    if (total_memory_kb <= 0)
+        return -1;
+
+    *memory_out = (float)rss * 100.0f / (float)total_memory_kb;
+
+    return calculate_health(
+        *cpu_out, *memory_out, after.state, after.priority);
+}
+
+void show_health(void)
+{
+    ProcessInfo processes[MAX_PROCESSES];
+    int count = 0;
+
+    DIR *dir = opendir("/proc");
+    if (!dir) {
         perror("Cannot open /proc");
         return;
     }
 
-    printf("\n================================================================\n");
-    printf("                    AEGISOS HEALTH MONITOR\n");
-    printf("================================================================\n");
-
-    printf("%-7s %-18s %-8s %-8s %-8s %-8s %-10s\n",
-           "PID", "PROCESS", "CPU%", "MEM%", "PRIOR", "SCORE", "STATUS");
-
-    printf("----------------------------------------------------------------\n");
-
     struct dirent *entry;
-    int count = 0;
 
-    while ((entry = readdir(dir)) != NULL && count < 15)
-    {
-        if (entry->d_type != DT_DIR)
+    while ((entry = readdir(dir)) != NULL &&
+           count < MAX_PROCESSES) {
+        const char *p = entry->d_name;
+
+        if (!*p)
+            continue;
+
+        while (*p && isdigit((unsigned char)*p))
+            p++;
+
+        if (*p != '\0')
             continue;
 
         int pid = atoi(entry->d_name);
-
         if (pid <= 0)
             continue;
 
-        char path[512];
-        char name[100] = "unknown";
-        char state = 'R';
+        ProcessInfo proc = {0};
+        proc.pid = pid;
 
-        sprintf(path, "/proc/%d/status", pid);
+        if (read_process(&proc) == 0)
+            processes[count++] = proc;
+    }
 
-        FILE *file = fopen(path, "r");
+    closedir(dir);
 
-        if (file == NULL)
+    long total_before = read_total_cpu();
+    long before[MAX_PROCESSES];
+
+    for (int i = 0; i < count; i++)
+        before[i] = processes[i].cpu_ticks;
+
+    sleep(1);
+
+    long total_after = read_total_cpu();
+    long total_delta = total_after - total_before;
+
+    FILE *fp = fopen("/proc/meminfo", "r");
+    long total_memory_kb = 0;
+    char line[256];
+
+    if (fp) {
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncmp(line, "MemTotal:", 9) == 0) {
+                sscanf(line + 9, "%ld", &total_memory_kb);
+                break;
+            }
+        }
+        fclose(fp);
+    }
+
+    long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_count < 1)
+        cpu_count = 1;
+
+    printf("\n================================================================\n");
+    printf("                    AEGISOS HEALTH MONITOR\n");
+    printf("================================================================\n");
+    printf("%-7s %-18s %-8s %-8s %-8s %-8s %-10s\n",
+           "PID", "PROCESS", "CPU%", "MEM%", "PRIOR",
+           "SCORE", "STATUS");
+    printf("----------------------------------------------------------------\n");
+
+    for (int i = 0; i < count; i++) {
+        ProcessInfo after = {0};
+        after.pid = processes[i].pid;
+
+        if (read_process(&after) != 0)
             continue;
 
-        char line[256];
-        long memory = 0;
+        long delta = after.cpu_ticks - before[i];
 
-        while (fgets(line, sizeof(line), file))
-        {
-            if (strncmp(line, "Name:", 5) == 0)
-                sscanf(line, "Name:\t%99s", name);
+        if (total_delta > 0 && delta >= 0)
+            after.cpu = (float)delta * 100.0f /
+                        (float)total_delta * (float)cpu_count;
 
-            if (strncmp(line, "State:", 6) == 0)
-                sscanf(line, "State:\t%c", &state);
+        if (total_memory_kb > 0)
+            after.memory = (float)after.rss_kb * 100.0f /
+                           (float)total_memory_kb;
 
-            if (strncmp(line, "VmRSS:", 6) == 0)
-                sscanf(line, "VmRSS:\t%ld", &memory);
-        }
+        after.score = calculate_health(
+            after.cpu, after.memory, after.state, after.priority);
 
-        fclose(file);
+        const char *status = after.score >= 70 ? "HEALTHY" :
+                             after.score >= 40 ? "WARNING" : "CRITICAL";
 
-        /*
-         * Convert process memory into a simple percentage
-         * relative to total system memory.
-         */
-        FILE *meminfo = fopen("/proc/meminfo", "r");
-
-        long total_memory = 1;
-
-        if (meminfo != NULL)
-        {
-            while (fgets(line, sizeof(line), meminfo))
-            {
-                if (strncmp(line, "MemTotal:", 9) == 0)
-                {
-                    sscanf(line, "MemTotal: %ld", &total_memory);
-                    break;
-                }
-            }
-
-            fclose(meminfo);
-        }
-
-        float memory_percent =
-            ((float)memory / (float)total_memory) * 100.0;
-
-        /*
-         * Measure CPU twice with a 1-second interval.
-         */
-        long total1 = get_total_cpu();
-        long process1 = get_process_cpu(pid);
-
-        sleep(1);
-
-        long total2 = get_total_cpu();
-        long process2 = get_process_cpu(pid);
-
-        long total_diff = total2 - total1;
-        long process_diff = process2 - process1;
-
-        float cpu = 0;
-
-        if (total_diff > 0)
-        {
-            cpu = ((float)process_diff /
-                   (float)total_diff) * 100.0;
-        }
-
-        int priority = getpriority(PRIO_PROCESS, pid);
-
-        int score =
-            calculate_health(cpu,
-                             memory_percent,
-                             state,
-                             priority);
-
-        char *status;
-
-        if (score >= 70)
-            status = "HEALTHY";
-        else if (score >= 40)
-            status = "WARNING";
-        else
-            status = "CRITICAL";
-
-        printf("%-7d %-18s %-8.2f %-8.2f %-8d %-8d %-10s\n",
-               pid,
-               name,
-               cpu,
-               memory_percent,
-               priority,
-               score,
-               status);
-
-        count++;
+        printf("%-7d %-18.18s %-8.2f %-8.2f %-8d %-8d %-10s\n",
+               after.pid, after.name, after.cpu, after.memory,
+               after.priority, after.score, status);
     }
 
     printf("================================================================\n");
-
-    closedir(dir);
 }

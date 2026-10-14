@@ -61,33 +61,46 @@ void fcfs_scheduling()
 
     printf("============================================\n");
 }
+
 void round_robin_scheduling()
 {
-    int n;
-    int burst[20];
-    int remaining[20];
-    int waiting[20];
-    int turnaround[20];
-    int quantum;
+    int n, quantum;
+    int burst[20], remaining[20];
+    int waiting[20], turnaround[20];
 
     printf("\n============================================\n");
     printf("        ROUND ROBIN CPU SCHEDULING\n");
     printf("============================================\n");
 
     printf("Enter number of processes: ");
-    scanf("%d", &n);
+
+    if (scanf("%d", &n) != 1 || n < 1 || n > 20)
+    {
+        printf("Invalid process count. Enter 1-20.\n");
+        return;
+    }
 
     for (int i = 0; i < n; i++)
     {
         printf("Enter burst time for P%d: ", i + 1);
-        scanf("%d", &burst[i]);
+
+        if (scanf("%d", &burst[i]) != 1 || burst[i] <= 0)
+        {
+            printf("Burst time must be a positive integer.\n");
+            return;
+        }
 
         remaining[i] = burst[i];
         waiting[i] = 0;
     }
 
     printf("Enter time quantum: ");
-    scanf("%d", &quantum);
+
+    if (scanf("%d", &quantum) != 1 || quantum <= 0)
+    {
+        printf("Time quantum must be positive.\n");
+        return;
+    }
 
     int time = 0;
     int completed = 0;
@@ -98,25 +111,22 @@ void round_robin_scheduling()
     {
         for (int i = 0; i < n; i++)
         {
-            if (remaining[i] > 0)
+            if (remaining[i] <= 0)
+                continue;
+
+            printf("P%d ", i + 1);
+
+            int slice = remaining[i] < quantum
+                      ? remaining[i] : quantum;
+
+            time += slice;
+            remaining[i] -= slice;
+
+            if (remaining[i] == 0)
             {
-                printf("P%d ", i + 1);
-
-                if (remaining[i] > quantum)
-                {
-                    time += quantum;
-                    remaining[i] -= quantum;
-                }
-                else
-                {
-                    time += remaining[i];
-
-                    waiting[i] = time - burst[i];
-
-                    remaining[i] = 0;
-
-                    completed++;
-                }
+                turnaround[i] = time;
+                waiting[i] = turnaround[i] - burst[i];
+                completed++;
             }
         }
     }
@@ -129,28 +139,21 @@ void round_robin_scheduling()
 
     for (int i = 0; i < n; i++)
     {
-        turnaround[i] = waiting[i] + burst[i];
-
         printf("P%d\t%d\t%d\t%d\n",
-               i + 1,
-               burst[i],
-               waiting[i],
-               turnaround[i]);
+               i + 1, burst[i], waiting[i], turnaround[i]);
 
         total_waiting += waiting[i];
         total_turnaround += turnaround[i];
     }
 
     printf("--------------------------------------------\n");
-
     printf("Average Waiting Time    : %.2f\n",
            total_waiting / n);
-
     printf("Average Turnaround Time : %.2f\n",
            total_turnaround / n);
-
     printf("============================================\n");
 }
+
 void priority_scheduling()
 {
     int n;

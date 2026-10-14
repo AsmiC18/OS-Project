@@ -1,8 +1,13 @@
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <limits.h>
+#include <errno.h>
+
 #include "process.h"
 #include "health.h"
 #include "monitor.h"
@@ -13,16 +18,80 @@
 #include "ipc.h"
 #include "sync.h"
 #include "autoheal.h"
-#define MAX_INPUT 200
+
+
+#define AEGIS_MAX_INPUT 200
 #define MAX_ARGS 20
 #define MAX_HISTORY 50
 
-int main() {
+static int parse_pid(const char *text, int *pid)
+{
+    char *end;
+    long value;
 
-    char input[MAX_INPUT];
+    if (text == NULL || *text == '\0')
+        return 0;
+
+    value = strtol(text, &end, 10);
+
+    if (*end != '\0' || value <= 1 || value > INT_MAX)
+        return 0;
+
+    *pid = (int)value;
+    return 1;
+}
+
+static void show_help(void)
+{
+    printf("\n============================================\n");
+    printf("             AEGISOS COMMANDS\n");
+    printf("============================================\n");
+
+    printf("\nShell Commands:\n");
+    printf("  help                 Show available commands\n");
+    printf("  cd <directory>       Change directory\n");
+    printf("  pwd                  Show current directory\n");
+    printf("  clear                Clear terminal\n");
+    printf("  history              Show command history\n");
+    printf("  exit                 Exit AegisOS\n");
+
+    printf("\nProcess Management:\n");
+    printf("  processes            List processes\n");
+    printf("  kill <PID>           Terminate a process\n");
+    printf("  suspend <PID>        Suspend a process\n");
+    printf("  resume <PID>         Resume a process\n");
+    printf("  priority <PID>       Show process priority\n");
+    printf("  setpriority <PID> <NICE>\n");
+    printf("                       Change process priority\n");
+
+    printf("\nMonitoring and Recovery:\n");
+    printf("  monitor              Show resource usage\n");
+    printf("  health               Show process health scores\n");
+    printf("  heal <PID> <SCORE> <CPU>\n");
+    printf("                       Run manual healing logic\n");
+    printf("  healcheck <PID>      Measure health and evaluate recovery\n");
+    printf("  autoheal <PID>       Adjust priority for a selected PID\n");
+    printf("  analyze <PID>        Analyze a process\n");
+    printf("  logs                 Show recovery logs\n");
+
+    printf("\nScheduling Algorithms:\n");
+    printf("  fcfs                 First Come First Served\n");
+    printf("  sjf                  Shortest Job First\n");
+    printf("  rr                   Round Robin\n");
+    printf("  priority_schedule    Priority scheduling\n");
+
+    printf("\nOS Demonstrations:\n");
+    printf("  ipc                  Pipe communication\n");
+    printf("  sync                 Producer-Consumer synchronization\n");
+
+    printf("============================================\n");
+}
+
+int main(void)
+{
+    char input[AEGIS_MAX_INPUT];
     char *args[MAX_ARGS];
-
-    char history[MAX_HISTORY][MAX_INPUT];
+    char history[MAX_HISTORY][AEGIS_MAX_INPUT];
     int history_count = 0;
 
     printf("====================================\n");
@@ -30,296 +99,316 @@ int main() {
     printf(" Intelligent Linux Process Shell\n");
     printf("====================================\n");
 
-    while (1) {
-
+    while (1)
+    {
         printf("\naegis> ");
+        fflush(stdout);
 
-        if (fgets(input, sizeof(input), stdin) == NULL) {
+        if (fgets(input, sizeof(input), stdin) == NULL)
             break;
+
+        /* Detect and discard the remainder of an overlong input line. */
+        if (strchr(input, '\n') == NULL && !feof(stdin))
+        {
+            int ch;
+            while ((ch = getchar()) != '\n' && ch != EOF)
+                ;
+            printf("Input too long. Try again.\n");
+            continue;
         }
 
         input[strcspn(input, "\n")] = '\0';
 
-        if (strlen(input) == 0) {
+        if (input[0] == '\0')
             continue;
-        }
 
-        /* Store command in history */
-        if (history_count < MAX_HISTORY) {
-            strcpy(history[history_count], input);
+        if (history_count < MAX_HISTORY)
+        {
+            snprintf(history[history_count],
+                     AEGIS_MAX_INPUT, "%s", input);
             history_count++;
         }
 
-        /* Exit */
-        if (strcmp(input, "exit") == 0) {
+        if (strcmp(input, "exit") == 0)
             break;
-        }
 
-        /* Help */
-        if (strcmp(input, "help") == 0) {
-
-            printf("\nAegisOS Commands:\n");
-            printf("  help      - Show available commands\n");
-            printf("  cd        - Change directory\n");
-            printf("  pwd       - Show current directory\n");
-            printf("  clear     - Clear terminal\n");
-            printf("  history   - Show command history\n");
-            printf("  exit      - Exit AegisOS\n");
-
+        if (strcmp(input, "help") == 0)
+        {
+            show_help();
             continue;
         }
 
-        /* Clear */
-        if (strcmp(input, "clear") == 0) {
-
+        if (strcmp(input, "clear") == 0)
+        {
             system("clear");
             continue;
         }
 
-        /* History */
-        if (strcmp(input, "history") == 0) {
-
-            for (int j = 0; j < history_count; j++) {
+        if (strcmp(input, "history") == 0)
+        {
+            for (int j = 0; j < history_count; j++)
                 printf("%d  %s\n", j + 1, history[j]);
-            }
 
             continue;
         }
 
-        /* Split command */
-        int i = 0;
+        /* Tokenize input into command and arguments. */
+        int argc = 0;
+        char *token = strtok(input, " \t");
 
-        char *token = strtok(input, " ");
-
-        while (token != NULL && i < MAX_ARGS - 1) {
-
-            args[i] = token;
-            i++;
-
-            token = strtok(NULL, " ");
+        while (token != NULL && argc < MAX_ARGS - 1)
+        {
+            args[argc++] = token;
+            token = strtok(NULL, " \t");
         }
 
-        args[i] = NULL;
+        args[argc] = NULL;
 
-        /* Built-in pwd */
-        if (strcmp(args[0], "pwd") == 0) {
+        if (argc == 0)
+            continue;
 
-            char directory[500];
+        if (strcmp(args[0], "pwd") == 0)
+        {
+            char directory[PATH_MAX];
 
-            getcwd(directory, sizeof(directory));
-
-            printf("%s\n", directory);
+            if (getcwd(directory, sizeof(directory)) != NULL)
+                printf("%s\n", directory);
+            else
+                perror("pwd");
 
             continue;
         }
 
-        /* Built-in cd */
-        if (strcmp(args[0], "cd") == 0) {
-
-            if (args[1] == NULL) {
-
+        if (strcmp(args[0], "cd") == 0)
+        {
+            if (args[1] == NULL)
                 printf("Usage: cd <directory>\n");
-
-            } else if (chdir(args[1]) != 0) {
-
+            else if (chdir(args[1]) != 0)
                 perror("cd");
 
+            continue;
+        }
+
+        if (strcmp(args[0], "processes") == 0)
+        {
+            list_processes();
+            continue;
+        }
+
+        if (strcmp(args[0], "kill") == 0 ||
+            strcmp(args[0], "suspend") == 0 ||
+            strcmp(args[0], "resume") == 0 ||
+            strcmp(args[0], "priority") == 0)
+        {
+            int pid;
+
+            if (args[1] == NULL || !parse_pid(args[1], &pid))
+            {
+                printf("Usage: %s <PID> (PID must be greater than 1)\n",
+                       args[0]);
+                continue;
+            }
+
+            if (strcmp(args[0], "kill") == 0)
+                kill_process(pid);
+            else if (strcmp(args[0], "suspend") == 0)
+                suspend_process(pid);
+            else if (strcmp(args[0], "resume") == 0)
+                resume_process(pid);
+            else
+                show_priority(pid);
+
+            continue;
+        }
+
+        if (strcmp(args[0], "setpriority") == 0)
+        {
+            int pid;
+            char *end;
+            long nice_value;
+
+            if (args[1] == NULL || args[2] == NULL ||
+                !parse_pid(args[1], &pid))
+            {
+                printf("Usage: setpriority <PID> <nice_value>\n");
+                continue;
+            }
+
+            nice_value = strtol(args[2], &end, 10);
+
+            if (*end != '\0' || nice_value < -20 || nice_value > 19)
+            {
+                printf("Nice value must be between -20 and 19.\n");
+                continue;
+            }
+
+            set_process_priority(pid, (int)nice_value);
+            continue;
+        }
+
+        if (strcmp(args[0], "monitor") == 0)
+        {
+            monitor_processes();
+            continue;
+        }
+
+        if (strcmp(args[0], "health") == 0)
+        {
+            show_health();
+            continue;
+        }
+
+        if (strcmp(args[0], "healcheck") == 0)
+        {
+            int pid;
+            float cpu = 0.0f;
+            float memory = 0.0f;
+
+            if (args[1] == NULL || !parse_pid(args[1], &pid))
+            {
+                printf("Usage: healcheck <PID>\n");
+                continue;
+            }
+
+            int score = measure_process_health(pid, &cpu, &memory);
+
+            if (score < 0)
+            {
+                printf("Could not measure health for PID %d.\n", pid);
+            }
+            else
+            {
+                printf("\nMeasured health for PID %d\n", pid);
+                printf("CPU usage : %.2f%%\n", cpu);
+                printf("Memory    : %.2f%% of system RAM\n", memory);
+                printf("Score     : %d/100\n", score);
+
+                analyze_process_health(pid, score, cpu);
             }
 
             continue;
         }
-        if (strcmp(args[0], "processes") == 0) {
 
-    list_processes();
+        if (strcmp(args[0], "heal") == 0)
+        {
+            int pid;
+            char *score_end;
+            char *cpu_end;
 
-    continue;
-}
-/* Kill process */
+            if (args[1] == NULL || args[2] == NULL || args[3] == NULL ||
+                !parse_pid(args[1], &pid))
+            {
+                printf("Usage: heal <PID> <SCORE> <CPU>\n");
+                continue;
+            }
 
-if (strcmp(args[0], "kill") == 0) {
+            long score = strtol(args[2], &score_end, 10);
+            float cpu = strtof(args[3], &cpu_end);
 
-    if (args[1] == NULL) {
-        printf("Usage: kill <PID>\n");
-    } else {
-        kill_process(atoi(args[1]));
-    }
+            if (*score_end != '\0' || score < 0 || score > 100 ||
+                *cpu_end != '\0' || cpu < 0.0f)
+            {
+                printf("Invalid score or CPU value.\n");
+                continue;
+            }
 
-    continue;
-}
+            analyze_process_health(pid, (int)score, cpu);
+            continue;
+        }
 
+        if (strcmp(args[0], "logs") == 0)
+        {
+            show_logs();
+            continue;
+        }
 
-/* Suspend process */
+        if (strcmp(args[0], "analyze") == 0)
+        {
+            int pid;
 
-if (strcmp(args[0], "suspend") == 0) {
+            if (args[1] == NULL || !parse_pid(args[1], &pid))
+                printf("Usage: analyze <PID>\n");
+            else
+                analyze_process(pid);
 
-    if (args[1] == NULL) {
-        printf("Usage: suspend <PID>\n");
-    } else {
-        suspend_process(atoi(args[1]));
-    }
+            continue;
+        }
 
-    continue;
-}
+        if (strcmp(args[0], "fcfs") == 0)
+        {
+            fcfs_scheduling();
+            continue;
+        }
 
+        if (strcmp(args[0], "rr") == 0)
+        {
+            round_robin_scheduling();
+            continue;
+        }
 
-/* Resume process */
+        if (strcmp(args[0], "priority_schedule") == 0)
+        {
+            priority_scheduling();
+            continue;
+        }
 
-if (strcmp(args[0], "resume") == 0) {
+        if (strcmp(args[0], "sjf") == 0)
+        {
+            sjf_scheduling();
+            continue;
+        }
 
-    if (args[1] == NULL) {
-        printf("Usage: resume <PID>\n");
-    } else {
-        resume_process(atoi(args[1]));
-    }
+        if (strcmp(args[0], "ipc") == 0)
+        {
+            pipe_communication();
+            continue;
+        }
 
-    continue;
-}
-/* Show process priority */
+        if (strcmp(args[0], "sync") == 0)
+        {
+            semaphore_demo();
+            continue;
+        }
 
-if (strcmp(args[0], "priority") == 0) {
+        if (strcmp(args[0], "autoheal") == 0)
+        {
+            int pid;
 
-    if (args[1] == NULL) {
+            if (args[1] == NULL || !parse_pid(args[1], &pid))
+                printf("Usage: autoheal <PID>\n");
+            else
+                auto_heal_pid(pid);
 
-        printf("Usage: priority <PID>\n");
+            continue;
+        }
 
-    } else {
+        /* Execute external programs. */
+        pid_t child = fork();
 
-        show_priority(atoi(args[1]));
-    }
-
-    continue;
-}
-
-
-/* Change process priority */
-
-if (strcmp(args[0], "setpriority") == 0) {
-
-    if (args[1] == NULL || args[2] == NULL) {
-
-        printf("Usage: setpriority <PID> <nice_value>\n");
-
-    } else {
-
-        set_process_priority(
-            atoi(args[1]),
-            atoi(args[2])
-        );
-    }
-
-    continue;
-}
-/* Resource Monitor */
-
-if (strcmp(args[0], "monitor") == 0) {
-
-    monitor_processes();
-
-    continue;
-}
-else if (strcmp(args[0], "health") == 0)
-{
-    show_health();
-    continue;
-}
-else if (strcmp(args[0], "heal") == 0)
-{
-    if (args[1] == NULL || args[2] == NULL || args[3] == NULL)
-    {
-        printf("Usage: heal <PID> <SCORE> <CPU>\n");
-    }
-    else
-    {
-        int pid = atoi(args[1]);
-        int score = atoi(args[2]);
-        float cpu = atof(args[3]);
-
-        analyze_process_health(pid, score, cpu);
-    }
-
-    continue;
-}
-else if (strcmp(args[0], "logs") == 0)
-{
-    show_logs();
-    continue;
-}
-
-else if (strcmp(args[0], "analyze") == 0)
-{
-    if (args[1] == NULL)
-    {
-        printf("Usage: analyze <PID>\n");
-    }
-    else
-    {
-        int pid = atoi(args[1]);
-
-        analyze_process(pid);
-    }
-
-    continue;
-}
-else if (strcmp(args[0], "fcfs") == 0)
-{
-    fcfs_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "rr") == 0)
-{
-    round_robin_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "priority_schedule") == 0)
-{
-    priority_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "sjf") == 0)
-{
-    sjf_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "ipc") == 0)
-{
-    pipe_communication();
-    continue;
-}
-else if (strcmp(args[0], "sync") == 0)
-{
-    semaphore_demo();
-    continue;
-}
-else if (strcmp(args[0], "autoheal") == 0)
-{
-    auto_heal();
-    continue;
-}
-        /* External command */
-
-        pid_t pid = fork();
-
-        if (pid == 0) {
-
+        if (child == 0)
+        {
             execvp(args[0], args);
-
             perror("Command failed");
-
-            exit(1);
+            _exit(127);
         }
-
-        else if (pid > 0) {
-
-            wait(NULL);
+        else if (child > 0)
+        {
+            int status;
+            while (waitpid(child, &status, 0) == -1)
+            {
+                if (errno != EINTR)
+                {
+                    perror("waitpid");
+                    break;
+                }
+            }
         }
-
-        else {
-
+        else
+        {
             perror("fork");
         }
     }
 
     printf("\nAegisOS terminated.\n");
-
     return 0;
 }

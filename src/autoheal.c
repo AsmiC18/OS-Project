@@ -1,117 +1,82 @@
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <dirent.h>
-#include <string.h>
-#include <unistd.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/resource.h>
 
 #include "autoheal.h"
-#include "process.h"
 #include "logger.h"
-#include <sys/resource.h>
-#define _GNU_SOURCE
 
-void auto_heal()
+void auto_heal_pid(int pid)
 {
-    DIR *dir;
-    struct dirent *entry;
-
-    dir = opendir("/proc");
-
-    if (dir == NULL)
+    if (pid <= 1)
     {
-        perror("opendir");
+        printf("Invalid PID. Use a PID greater than 1.\n");
+        return;
+    }
+
+    /* Only operate on a process that exists. */
+    if (kill(pid, 0) != 0)
+    {
+        perror("Process does not exist or is inaccessible");
+        return;
+    }
+
+    errno = 0;
+    int old_priority = getpriority(PRIO_PROCESS, pid);
+
+    if (errno != 0)
+    {
+        perror("Cannot read process priority");
         return;
     }
 
     printf("\n========================================\n");
-    printf("        AEGISOS AUTO-HEAL ENGINE\n");
+    printf("       AEGISOS CONTROLLED RECOVERY\n");
     printf("========================================\n");
+    printf("Target PID: %d\n", pid);
+    printf("Original nice value: %d\n", old_priority);
 
-    while ((entry = readdir(dir)) != NULL)
+    /*
+     * Increasing the nice value to 5 lowers scheduling priority.
+     * This is a controlled demonstration, not a general health fix.
+     */
+    if (setpriority(PRIO_PROCESS, pid, 5) != 0)
     {
-        if (entry->d_type != DT_DIR)
-            continue;
+        perror("Priority adjustment failed");
 
-        int pid = atoi(entry->d_name);
+        log_recovery(
+            pid, 0, 0.0f,
+            "FAILED: priority adjustment"
+        );
 
-        if (pid <= 0)
-            continue;
-
-        char path[256];
-        char state;
-        int priority;
-
-        /* Read process state */
-        snprintf(path, sizeof(path),
-                 "/proc/%d/stat", pid);
-
-        FILE *fp = fopen(path, "r");
-
-        if (fp == NULL)
-            continue;
-
-        char name[100];
-
-        if (fscanf(fp, "%d %99s %c",
-                   &pid, name, &state) != 3)
-        {
-            fclose(fp);
-            continue;
-        }
-
-        fclose(fp);
-
-        /* Read priority */
-        priority = getpriority(PRIO_PROCESS, pid);
-
-        /*
-         * Simple health rule:
-         * stopped process = unhealthy
-         * very low priority = warning
-         */
-
-        int score = 100;
-
-        if (state == 'T')
-            score -= 40;
-
-        if (priority > 10)
-            score -= 10;
-
-        printf("\nPID: %d\n", pid);
-        printf("Process: %s\n", name);
-        printf("State: %c\n", state);
-        printf("Priority: %d\n", priority);
-        printf("Health Score: %d\n", score);
-
-        /*
-         * Healing rule
-         */
-
-        if (score < 60)
-        {
-            printf("Action: Adjusting priority...\n");
-
-            set_process_priority(pid, 5);
-
-            log_recovery(
-                pid,
-                score,
-                0.0,
-                "Automatic priority adjustment"
-            );
-
-            printf("Recovery: Applied\n");
-        }
-        else
-        {
-            printf("Action: No recovery required\n");
-        }
+        printf("Recovery result: FAILED\n");
+        return;
     }
 
-    closedir(dir);
+    errno = 0;
+    int new_priority = getpriority(PRIO_PROCESS, pid);
 
-    printf("\n========================================\n");
-    printf("        AUTO-HEAL SCAN COMPLETE\n");
+    if (errno == 0 && new_priority == 5)
+    {
+        printf("New nice value: %d\n", new_priority);
+        printf("Recovery result: VERIFIED\n");
+
+        log_recovery(
+            pid, 100, 0.0f,
+            "SUCCESS: priority adjustment verified"
+        );
+    }
+    else
+    {
+        printf("Recovery result: VERIFICATION FAILED\n");
+
+        log_recovery(
+            pid, 0, 0.0f,
+            "FAILED: priority verification"
+        );
+    }
+
     printf("========================================\n");
 }
