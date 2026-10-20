@@ -1,0 +1,34 @@
+# Build output
+build/
+*.o
+*.a
+*.out
+core
+core.*
+
+# Runtime data (keep the directories, not their contents)
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+reports/*
+!reports/.gitkeep
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+
+# Local config (the .example files are committed)
+config/*.conf
+!config/*.example.conf
+
+# Editor / OS noise (shared .vscode/*.json files ARE committed)
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
+.DS_Store
+*~
+*.swp

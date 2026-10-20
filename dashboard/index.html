@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AegisOS Dashboard (scaffold)</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>AegisOS</h1>
+    <span id="backend-status" class="status">Backend not connected (scaffold)</span>
+  </header>
+
+  <nav id="nav" aria-label="Dashboard sections">
+    <a href="#overview">Overview</a>
+    <a href="#process-monitor">Process Monitor</a>
+    <a href="#supervisor">Application Supervisor</a>
+    <a href="#anomalies">Anomaly Detection</a>
+    <a href="#recovery">Recovery Center</a>
+    <a href="#incidents">Incident Reports</a>
+    <a href="#settings">Settings</a>
+  </nav>
+
+  <main>
+    <section id="overview"><h2>Overview</h2><p class="todo">Planned: CPU, memory, supervised apps, active alerts. Not implemented.</p></section>
+    <section id="process-monitor"><h2>Process Monitor</h2><p class="todo">Planned: GET /api/processes. Not implemented.</p></section>
+    <section id="supervisor"><h2>Application Supervisor</h2><p class="todo">Planned: GET /api/applications. Not implemented.</p></section>
+    <section id="anomalies"><h2>Anomaly Detection</h2><p class="todo">Planned: alerts, thresholds, severity, explanations. Not implemented.</p></section>
+    <section id="recovery"><h2>Recovery Center</h2><p class="todo">Planned: policies, dry-run mode, recovery history. Not implemented.</p></section>
+    <section id="incidents"><h2>Incident Reports</h2><p class="todo">Planned: GET /api/incidents, GET /api/reports, CSV export. Not implemented.</p></section>
+    <section id="settings"><h2>Settings</h2><p class="todo">Planned: sampling interval and supported options. Not implemented.</p></section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
