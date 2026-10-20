@@ -15,6 +15,7 @@ typedef struct {
     uint64_t user_ticks;
     uint64_t system_ticks;
     uint64_t total_ticks;
+    uint64_t start_ticks;
     int64_t resident_pages;
 } AegisProcessInfo;
 

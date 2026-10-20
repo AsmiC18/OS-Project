@@ -20,6 +20,7 @@ typedef struct {
 typedef struct {
     pid_t pid;
     uint64_t previous_ticks;
+    uint64_t process_start_ticks;
     struct timespec previous_time;
     int initialized;
 } MonitorEntry;

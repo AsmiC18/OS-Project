@@ -16,7 +16,7 @@ static double elapsed_seconds(struct timespec a, struct timespec b)
 
 int monitor_init(ProcessMonitor *monitor)
 {
-    if (!monitor) {
+    if (monitor == NULL) {
         errno = EINVAL;
         return -1;
     }
@@ -27,7 +27,7 @@ int monitor_init(ProcessMonitor *monitor)
 
 void monitor_destroy(ProcessMonitor *monitor)
 {
-    if (!monitor)
+    if (monitor == NULL)
         return;
 
     free(monitor->entries);
@@ -36,7 +36,7 @@ void monitor_destroy(ProcessMonitor *monitor)
 
 int monitor_add_pid(ProcessMonitor *monitor, pid_t pid)
 {
-    if (!monitor || pid <= 0) {
+    if (monitor == NULL || pid <= 0) {
         errno = EINVAL;
         return -1;
     }
@@ -47,13 +47,18 @@ int monitor_add_pid(ProcessMonitor *monitor, pid_t pid)
     }
 
     if (monitor->entry_count == monitor->entry_capacity) {
+        if (monitor->entry_capacity > SIZE_MAX / 2 / sizeof(MonitorEntry)) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+
         size_t capacity = monitor->entry_capacity
                         ? monitor->entry_capacity * 2 : 8;
 
         MonitorEntry *entries = realloc(
             monitor->entries, capacity * sizeof(*entries));
 
-        if (!entries)
+        if (entries == NULL)
             return -1;
 
         monitor->entries = entries;
@@ -69,7 +74,7 @@ int monitor_add_pid(ProcessMonitor *monitor, pid_t pid)
 
 int monitor_sample(ProcessMonitor *monitor, pid_t pid, MonitorSample *out)
 {
-    if (!monitor || !out || pid <= 0) {
+    if (monitor == NULL || out == NULL || pid <= 0) {
         errno = EINVAL;
         return -1;
     }
@@ -86,6 +91,7 @@ int monitor_sample(ProcessMonitor *monitor, pid_t pid, MonitorSample *out)
     if (index == monitor->entry_count) {
         if (monitor_add_pid(monitor, pid) != 0)
             return -1;
+
         index = monitor->entry_count - 1;
     }
 
@@ -101,13 +107,9 @@ int monitor_sample(ProcessMonitor *monitor, pid_t pid, MonitorSample *out)
         return -1;
 
     long ticks_per_second = sysconf(_SC_CLK_TCK);
-    if (ticks_per_second <= 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
     long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0) {
+
+    if (ticks_per_second <= 0 || page_size <= 0) {
         errno = EINVAL;
         return -1;
     }
@@ -116,25 +118,26 @@ int monitor_sample(ProcessMonitor *monitor, pid_t pid, MonitorSample *out)
         (double)sample.process.resident_pages * (double)page_size /
         (1024.0 * 1024.0);
 
-    if (entry->initialized) {
+    int same_process =
+        entry->initialized &&
+        entry->process_start_ticks == sample.process.start_ticks;
+
+    if (same_process) {
         double elapsed = elapsed_seconds(
             entry->previous_time, sample.timestamp);
 
-        if (elapsed > 0.0) {
-            uint64_t delta = sample.process.total_ticks >=
-                             entry->previous_ticks
-                           ? sample.process.total_ticks -
-                             entry->previous_ticks : 0;
-
-            /* CPU percentage is normalized to one logical CPU (0–100% per core). */
+        if (elapsed > 0.0 &&
+            sample.process.total_ticks >= entry->previous_ticks) {
             sample.cpu_percent =
-                100.0 * (double)delta /
+                100.0 * (double)(
+                    sample.process.total_ticks - entry->previous_ticks) /
                 ((double)ticks_per_second * elapsed);
         }
     }
 
     entry->previous_ticks = sample.process.total_ticks;
     entry->previous_time = sample.timestamp;
+    entry->process_start_ticks = sample.process.start_ticks;
     entry->initialized = 1;
 
     sample.valid = 1;

@@ -1,8 +1,9 @@
-
 #ifndef AEGISOS_ANOMALY_H
 #define AEGISOS_ANOMALY_H
 
 #include "monitor.h"
+
+#define ANOMALY_MAX_TRACKED_PROCESSES 256
 
 typedef enum {
     ANOMALY_NONE = 0,
@@ -21,20 +22,33 @@ typedef struct {
 } Anomaly;
 
 typedef struct {
+    pid_t pid;
+    unsigned cpu_count;
+    unsigned memory_count;
+    int cpu_alerted;
+    int memory_alerted;
+    int active;
+} AnomalyProcessState;
+
+typedef struct {
     double cpu_threshold_percent;
     double memory_threshold_mb;
     unsigned sustained_samples;
-    unsigned cpu_count;
-    unsigned memory_count;
+
+    AnomalyProcessState processes[ANOMALY_MAX_TRACKED_PROCESSES];
 } AnomalyDetector;
 
-void anomaly_detector_init(AnomalyDetector *detector,
-                           double cpu_threshold_percent,
-                           double memory_threshold_mb,
-                           unsigned sustained_samples);
+void anomaly_detector_init(
+    AnomalyDetector *detector,
+    double cpu_threshold_percent,
+    double memory_threshold_mb,
+    unsigned sustained_samples
+);
 
-int anomaly_detector_evaluate(AnomalyDetector *detector,
-                              const MonitorSample *sample,
-                              Anomaly *out);
+int anomaly_detector_evaluate(
+    AnomalyDetector *detector,
+    const MonitorSample *sample,
+    Anomaly *out
+);
 
 #endif

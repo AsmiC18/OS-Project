@@ -1,11 +1,27 @@
-/*
- * reports.h - Incident queries/filtering, CSV export, recovery statistics (detection delay, success rate, MTTR).
- *
- * STATUS: scaffold only. No declarations yet; see docs/MODULE_DESIGN.md.
- */
+
 #ifndef AEGISOS_REPORTS_H
 #define AEGISOS_REPORTS_H
 
-/* TODO: public interface for the reports module. */
+#include "anomaly.h"
+#include "monitor.h"
 
-#endif /* AEGISOS_REPORTS_H */
+#include <stddef.h>
+#include <stdio.h>
+
+typedef struct {
+    const MonitorSample *samples;
+    size_t sample_count;
+
+    const Anomaly *anomalies;
+    size_t anomaly_count;
+} AegisReportData;
+
+/*
+ * Export monitoring samples and anomaly records as CSV.
+ *
+ * The caller owns the FILE and must open it for writing.
+ * Returns 0 on success, -1 on failure and sets errno.
+ */
+int reports_write_csv(FILE *output, const AegisReportData *data);
+
+#endif
