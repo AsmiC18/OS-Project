@@ -378,3 +378,103 @@ A missing favicon is generally harmless and does not prevent the dashboard from 
 AegisOS demonstrates Linux process monitoring, resource anomaly detection, process supervision, restart limits, exponential backoff, policy-based recovery decisions, HTTP API development, and browser-based visualization.
 
 The current implementation can detect sustained resource anomalies and restart supervised programs that exit unsuccessfully. Integrating anomaly detection with automatic policy-controlled recovery remains future work.
+
+
+
+## How to Run AegisOS
+
+### 1. Build the Project
+
+Open the Ubuntu terminal in VS Code and run:
+
+```bash
+cd /mnt/c/Users/idunn/Downloads/OS-Project-member-2
+make clean && make
+```
+
+### 2. Run Tests
+
+```bash
+make test
+```
+
+### 3. Start the API Server
+
+Open Terminal 1 and run:
+
+```bash
+./build/aegisos --api 8080
+```
+
+Keep this terminal running.
+
+### 4. Start the Dashboard
+
+Open Terminal 2 and run:
+
+```bash
+cd /mnt/c/Users/idunn/Downloads/OS-Project-member-2
+python3 -m http.server 8000 --directory dashboard
+```
+
+Keep this terminal running.
+
+### 5. Open the Dashboard
+
+Open your browser and visit:
+
+http://localhost:8000
+
+The dashboard displays process information and detected anomalies using the AegisOS API.
+
+### 6. Test Process Monitoring
+
+Open Terminal 3 and run:
+
+```bash
+cd /mnt/c/Users/idunn/Downloads/OS-Project-member-2
+sleep 60 &
+PID=$!
+./build/aegisos --monitor "$PID" 3
+kill "$PID"
+```
+
+### 7. Test Process Supervision
+
+Test a successful process:
+
+```bash
+./build/aegisos --supervise sh -c 'exit 0'
+```
+
+Test a failing process and observe the restart attempts:
+
+```bash
+./build/aegisos --supervise sh -c 'exit 1'
+```
+
+### 8. Test Anomaly Detection
+
+Run a CPU-intensive process:
+
+```bash
+yes > /dev/null &
+PID=$!
+```
+
+Keep the dashboard open for approximately 10–15 seconds, then visit:
+
+http://localhost:8080/api/anomalies
+
+Stop the test process afterward:
+
+```bash
+kill "$PID"
+```
+
+### 9. Stop the Servers
+
+Press `Ctrl+C` in the terminals running the API server and dashboard server.
+
+**Note:** Automatic process recovery triggered by anomaly detection is not currently implemented. The recovery module evaluates recovery decisions, while the command-line supervisor independently handles failed child processes.
+
