@@ -40,7 +40,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    /* Start the HTTP API server */
+    /* Start the persistent HTTP API server */
     if ((argc == 2 || argc == 3) &&
         strcmp(argv[1], "--api") == 0) {
         unsigned long port = 8080;
@@ -61,11 +61,14 @@ int main(int argc, char **argv)
             }
         }
 
-        fprintf(stderr,
-                "Error: API server command is not implemented yet\n");
-        fprintf(stderr,
-                "Requested port: %lu\n", port);
-        return 1;
+        printf("Starting AegisOS API on port %lu...\n", port);
+
+        if (api_server_run((unsigned short)port) != 0) {
+            perror("api_server_run");
+            return 1;
+        }
+
+        return 0;
     }
 
     /* Supervise a child program and restart it after failure */

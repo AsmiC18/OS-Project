@@ -18,6 +18,7 @@
     </div>
 
     <p class="nav-label">WORKSPACE</p>
+
     <nav id="nav">
       <a class="active" href="#overview"><span>◫</span> Overview</a>
       <a href="#process-monitor"><span>▤</span> Process monitor</a>
@@ -43,12 +44,14 @@
         <p class="eyebrow">LINUX SYSTEM MANAGEMENT</p>
         <h2 id="page-title">Overview</h2>
       </div>
+
       <div class="connection">
         <span class="status-dot"></span>
-        <span id="backend-status">Waiting for backend</span>
+        <span id="backend-status">Connecting...</span>
       </div>
     </header>
 
+    <!-- OVERVIEW -->
     <section id="overview" class="page active">
       <div class="welcome">
         <div>
@@ -61,92 +64,411 @@
 
       <div class="notice">
         <strong>Backend connection:</strong>
-        <span id="connection-message">Live metrics are not connected yet. Values will appear when the C API is implemented.</span>
+        <span id="connection-message">Connecting to the AegisOS C API...</span>
       </div>
 
       <div class="metrics-grid">
         <article class="metric-card">
-          <p>System CPU usage</p>
+          <p>Visible process CPU usage</p>
           <div class="metric-value" id="cpu-value">—<span>%</span></div>
-          <p class="metric-foot">Waiting for live data</p>
+          <p class="metric-foot">Sum of reported process CPU usage</p>
         </article>
+
         <article class="metric-card">
-          <p>Memory usage</p>
+          <p>Combined process memory</p>
           <div class="metric-value" id="memory-value">—<span> MB</span></div>
-          <p class="metric-foot">Waiting for live data</p>
+          <p class="metric-foot">Resident memory of visible processes</p>
         </article>
+
         <article class="metric-card">
-          <p>Monitored processes</p>
+          <p>Visible processes</p>
           <div class="metric-value" id="process-count">—</div>
-          <p class="metric-foot">Processes tracked by AegisOS</p>
+          <p class="metric-foot">Processes discovered through Linux /proc</p>
         </article>
+
         <article class="metric-card">
           <p>Active incidents</p>
           <div class="metric-value" id="incident-count">—</div>
-          <p class="metric-foot">Awaiting incident API</p>
+          <p class="metric-foot">Incident API not implemented</p>
         </article>
       </div>
 
       <div class="content-grid">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">LIVE MONITORING</p><h3>Process activity</h3></div>
-            <span class="pill">Live API pending</span>
+            <div>
+              <p class="eyebrow">LIVE MONITORING</p>
+              <h3>Process activity</h3>
+            </div>
+            <span class="pill" id="overview-process-status">Connecting...</span>
           </div>
-          <div class="empty-state">
-            <div class="empty-icon">▤</div>
-            <h4>No live process data yet</h4>
-            <p>This table will show process names, PIDs, CPU usage, memory, and state when the backend endpoint is connected.</p>
-            <a href="#process-monitor">View process monitor →</a>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>PID</th>
+                  <th>Process name</th>
+                  <th>CPU</th>
+                  <th>Memory</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody id="overview-process-table">
+                <tr>
+                  <td colspan="5" class="table-empty">Loading process data...</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+
+          <p class="panel-note">
+            Showing up to 8 processes.
+            <a href="#process-monitor">View all processes →</a>
+          </p>
         </article>
 
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">SYSTEM HEALTH</p><h3>Service status</h3></div>
+            <div>
+              <p class="eyebrow">SYSTEM HEALTH</p>
+              <h3>Service status</h3>
+            </div>
           </div>
-          <div class="service-row"><span>C process monitor</span><span class="badge pending">Not connected</span></div>
-          <div class="service-row"><span>Process supervisor</span><span class="badge pending">Not connected</span></div>
-          <div class="service-row"><span>Recovery engine</span><span class="badge pending">Not connected</span></div>
-          <div class="service-row"><span>HTTP API</span><span class="badge pending">Not verified</span></div>
+
+          <div class="service-row">
+            <span>C process data API</span>
+            <span class="badge pending" id="monitor-service-status">Checking...</span>
+          </div>
+
+
+          <div class="service-row">
+            <span>Process supervisor</span>
+            <span class="badge pending" id="supervisor-service-status">CLI available · Not monitored</span>
+          </div>
+
+          <div class="service-row">
+            <span>Recovery engine</span>
+            <span class="badge pending" id="recovery-engine-status">Detection only</span>
+          </div>
+
+
+          <div class="service-row">
+            <span>HTTP API</span>
+            <span class="badge pending" id="http-service-status">Checking...</span>
+          </div>
+
+
+          <p class="panel-note">
+            The supervisor is available through the CLI. Dashboard supervision
+            and automated recovery are not yet implemented.
+          </p>
+
         </article>
       </div>
     </section>
 
+    <!-- PROCESS MONITOR -->
     <section id="process-monitor" class="page">
-      <div class="section-intro"><p class="eyebrow">OBSERVABILITY</p><h2>Process monitor</h2><p>Inspect process identity, resource consumption, and state.</p></div>
+      <div class="section-intro">
+        <p class="eyebrow">OBSERVABILITY</p>
+        <h2>Process monitor</h2>
+        <p>Inspect process identity, resource consumption, and state.</p>
+      </div>
+
       <article class="panel">
-        <div class="panel-heading"><h3>Monitored processes</h3><span class="pill">Awaiting API</span></div>
-        <div class="table-wrap"><table><thead><tr><th>PID</th><th>Process name</th><th>CPU</th><th>Memory</th><th>State</th></tr></thead><tbody id="process-table"><tr><td colspan="5" class="table-empty">No live process data available yet.</td></tr></tbody></table></div>
+        <div class="panel-heading">
+          <h3>Processes discovered by Linux</h3>
+          <span class="pill" id="process-page-status">Connecting...</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PID</th>
+                <th>Process name</th>
+                <th>CPU</th>
+                <th>Memory</th>
+                <th>State</th>
+              </tr>
+            </thead>
+            <tbody id="process-table">
+              <tr>
+                <td colspan="5" class="table-empty">Loading process data...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
     </section>
 
+    <!-- SUPERVISOR -->
+
+    <!-- SUPERVISOR -->
     <section id="supervisor" class="page">
-      <div class="section-intro"><p class="eyebrow">LIFECYCLE MANAGEMENT</p><h2>Application supervisor</h2><p>Review supervised applications and their restart status.</p></div>
-      <article class="panel"><div class="panel-heading"><h3>Registered applications</h3><span class="pill">Awaiting API</span></div><div class="empty-state"><div class="empty-icon">◉</div><h4>No application data connected</h4><p>Application registration and lifecycle API routes are not implemented yet.</p></div></article>
+      <div class="section-intro">
+        <p class="eyebrow">LIFECYCLE MANAGEMENT</p>
+        <h2>Application supervisor</h2>
+        <p>Review the supervisor capabilities currently available in AegisOS.</p>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Supervisor capabilities</h3>
+          <span class="pill">CLI available</span>
+        </div>
+
+        <div class="service-row">
+          <span>Launch a child process</span>
+          <span class="badge">Available via CLI</span>
+        </div>
+
+        <div class="service-row">
+          <span>Restart after process failure</span>
+          <span class="badge">Available via CLI</span>
+        </div>
+
+        <div class="service-row">
+          <span>Maximum restart attempts</span>
+          <span>3 (CLI default)</span>
+        </div>
+
+        <div class="service-row">
+          <span>Restart backoff</span>
+          <span>Exponential, capped at 60 seconds</span>
+        </div>
+
+        <div class="service-row">
+          <span>Dashboard application registration</span>
+          <span class="badge pending">Not implemented</span>
+        </div>
+
+        <div class="service-row">
+          <span>Live supervised-process status</span>
+          <span class="badge pending">Not exposed by API</span>
+        </div>
+
+        <p class="panel-note">
+          The CLI supervisor runs with the command
+          <code>./build/aegisos --supervise PROGRAM</code>.
+          This dashboard does not launch or restart programs.
+        </p>
+      </article>
     </section>
 
+
+    <!-- ANOMALIES -->
+
+    <!-- ANOMALIES -->
     <section id="anomalies" class="page">
-      <div class="section-intro"><p class="eyebrow">DETECTION</p><h2>Anomaly detection</h2><p>Review abnormal resource usage and the rules that triggered alerts.</p></div>
-      <article class="panel"><div class="panel-heading"><h3>Detected anomalies</h3><span class="pill">Awaiting API</span></div><div class="empty-state"><div class="empty-icon">⚠</div><h4>No live anomaly feed connected</h4><p>AegisOS has anomaly-detection code, but dashboard alert delivery still needs integration.</p></div></article>
+      <div class="section-intro">
+        <p class="eyebrow">DETECTION</p>
+        <h2>Anomaly detection</h2>
+        <p>Review abnormal resource usage and the rules that triggered alerts.</p>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Detected anomalies</h3>
+          <span class="pill" id="anomaly-status">Live feed connected</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>PID</th>
+                <th>Observed</th>
+                <th>Threshold</th>
+                <th>Explanation</th>
+              </tr>
+            </thead>
+            <tbody id="anomaly-table">
+              <tr>
+                <td colspan="5" class="table-empty">Loading anomalies...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
     </section>
 
+
+    <!-- RECOVERY -->
+
+    <!-- RECOVERY -->
     <section id="recovery" class="page">
-      <div class="section-intro"><p class="eyebrow">POLICY MANAGEMENT</p><h2>Recovery center</h2><p>Review recovery policies and permitted recovery actions.</p></div>
-      <article class="panel"><div class="panel-heading"><h3>Recovery policies</h3><span class="pill">Awaiting API</span></div><div class="service-row"><span>Alert-only policy</span><span class="badge pending">Backend integration needed</span></div><div class="service-row"><span>Dry-run policy</span><span class="badge pending">Backend integration needed</span></div><div class="service-row"><span>Automatic restart policy</span><span class="badge pending">Backend integration needed</span></div><p class="panel-note">This page does not execute recovery actions. Controls will be added after secure API routes are implemented.</p></article>
+      <div class="section-intro">
+        <p class="eyebrow">POLICY MANAGEMENT</p>
+        <h2>Recovery center</h2>
+        <p>Review detected anomalies and the current recovery capabilities.</p>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Recovery status</h3>
+          <span class="pill" id="recovery-status">Connected</span>
+        </div>
+
+        <div class="service-row">
+          <span>Anomaly detection</span>
+          <span class="badge" id="recovery-detection-status">Connected</span>
+        </div>
+
+        <div class="service-row">
+          <span>Restart-on-failure supervisor</span>
+          <span class="badge">CLI available</span>
+        </div>
+
+        <div class="service-row">
+          <span>Dashboard-triggered recovery</span>
+          <span class="badge pending">Not implemented</span>
+        </div>
+
+        <div class="service-row">
+          <span>Automatic recovery policy configuration</span>
+          <span class="badge pending">Not implemented</span>
+        </div>
+
+        <h3 class="subsection-heading">Recent anomalies</h3>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Incident</th>
+                <th>Process ID</th>
+                <th>Observed</th>
+                <th>Threshold</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="recovery-table">
+              <tr>
+                <td colspan="5" class="table-empty">Loading recovery information...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="panel-note">
+          This page is informational. It does not terminate processes or trigger restarts.
+        </p>
+      </article>
     </section>
 
+
+    <!-- INCIDENTS -->
+
+    <!-- INCIDENTS -->
     <section id="incidents" class="page">
-      <div class="section-intro"><p class="eyebrow">AUDIT TRAIL</p><h2>Incident reports</h2><p>Review incidents and export recorded results.</p></div>
-      <article class="panel"><div class="panel-heading"><h3>Incident history</h3><span class="pill">Awaiting API</span></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Process</th><th>Incident</th><th>Action</th><th>Outcome</th></tr></thead><tbody><tr><td colspan="5" class="table-empty">Incident history endpoint is not implemented yet.</td></tr></tbody></table></div></article>
+      <div class="section-intro">
+        <p class="eyebrow">AUDIT TRAIL</p>
+        <h2>Incident reports</h2>
+        <p>Review detected anomalies recorded by the monitoring service.</p>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Incident history</h3>
+          <span class="pill" id="incident-status">Connecting...</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Process ID</th>
+                <th>Incident</th>
+                <th>Observed</th>
+                <th>Threshold</th>
+              </tr>
+            </thead>
+            <tbody id="incident-table">
+              <tr>
+                <td colspan="5" class="table-empty">Loading incident history...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="panel-note">
+          This history contains detected anomalies. Recovery actions and outcomes
+          are not recorded by this endpoint.
+        </p>
+      </article>
     </section>
 
+
+    <!-- SETTINGS -->
+
+    <!-- SETTINGS -->
+
+    <!-- SETTINGS -->
     <section id="settings" class="page">
-      <div class="section-intro"><p class="eyebrow">CONFIGURATION</p><h2>Settings</h2><p>Configuration options supported by the AegisOS backend.</p></div>
-      <article class="panel"><h3>Monitoring configuration</h3><div class="service-row"><span>Sampling interval</span><span class="badge pending">Backend setting not connected</span></div><div class="service-row"><span>Recovery policy</span><span class="badge pending">Backend setting not connected</span></div><div class="service-row"><span>API binding</span><span>Loopback address intended</span></div><p class="panel-note">Settings are currently informational; no configuration changes are sent to the backend.</p></article>
+      <div class="section-intro">
+        <p class="eyebrow">CONFIGURATION</p>
+        <h2>Settings</h2>
+        <p>Current monitoring and anomaly-detection configuration.</p>
+      </div>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <h3>Monitoring configuration</h3>
+          <span class="pill" id="settings-status">Configured in backend</span>
+        </div>
+
+        <div class="service-row">
+          <span>API host</span>
+          <span>127.0.0.1</span>
+        </div>
+
+        <div class="service-row">
+          <span>API port</span>
+          <span>8080</span>
+        </div>
+
+        <div class="service-row">
+          <span>Dashboard refresh interval</span>
+          <span>3 seconds</span>
+        </div>
+
+        <div class="service-row">
+          <span>High CPU threshold</span>
+          <span>80%</span>
+        </div>
+
+        <div class="service-row">
+          <span>High memory threshold</span>
+          <span>512 MB</span>
+        </div>
+
+        <div class="service-row">
+          <span>Required consecutive samples</span>
+          <span>3</span>
+        </div>
+
+        <div class="service-row">
+          <span>Recovery policy</span>
+          <span>Detection only; automatic recovery not enabled</span>
+        </div>
+
+        <p class="panel-note">
+          These values describe the current implementation. This page does not
+          modify backend configuration.
+        </p>
+      </article>
     </section>
 
-    <footer><span>AegisOS · Process supervision and self-recovery</span><span>Dashboard interface prototype</span></footer>
+
+
+    <footer>
+      <span>AegisOS · Process supervision and self-recovery</span>
+      <span>Dashboard interface</span>
+    </footer>
   </main>
 
   <script src="app.js"></script>
