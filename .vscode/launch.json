@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug aegisos",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/aegisos",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "build",
+      "setupCommands": [
+        { "description": "Pretty-print", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    }
+  ]
+}

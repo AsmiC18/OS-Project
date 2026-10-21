@@ -1,0 +1,154 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AegisOS | Process Supervision</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">A</div>
+      <div>
+        <h1>AegisOS</h1>
+        <p>Process supervision</p>
+      </div>
+    </div>
+
+    <p class="nav-label">WORKSPACE</p>
+    <nav id="nav">
+      <a class="active" href="#overview"><span>◫</span> Overview</a>
+      <a href="#process-monitor"><span>▤</span> Process monitor</a>
+      <a href="#supervisor"><span>◉</span> Application supervisor</a>
+      <a href="#anomalies"><span>⚠</span> Anomaly detection</a>
+      <a href="#recovery"><span>↻</span> Recovery center</a>
+      <a href="#incidents"><span>▧</span> Incident reports</a>
+      <a href="#settings"><span>⚙</span> Settings</a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <span class="status-dot"></span>
+      <div>
+        <strong id="sidebar-status">Backend disconnected</strong>
+        <p>Linux monitoring service</p>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">LINUX SYSTEM MANAGEMENT</p>
+        <h2 id="page-title">Overview</h2>
+      </div>
+      <div class="connection">
+        <span class="status-dot"></span>
+        <span id="backend-status">Waiting for backend</span>
+      </div>
+    </header>
+
+    <section id="overview" class="page active">
+      <div class="welcome">
+        <div>
+          <p class="eyebrow">SYSTEM OVERVIEW</p>
+          <h2>Process health at a glance</h2>
+          <p>Monitor workloads, detect abnormal activity, and review recovery events.</p>
+        </div>
+        <div class="system-mark">AEGIS <span>OS</span></div>
+      </div>
+
+      <div class="notice">
+        <strong>Backend connection:</strong>
+        <span id="connection-message">Live metrics are not connected yet. Values will appear when the C API is implemented.</span>
+      </div>
+
+      <div class="metrics-grid">
+        <article class="metric-card">
+          <p>System CPU usage</p>
+          <div class="metric-value" id="cpu-value">—<span>%</span></div>
+          <p class="metric-foot">Waiting for live data</p>
+        </article>
+        <article class="metric-card">
+          <p>Memory usage</p>
+          <div class="metric-value" id="memory-value">—<span> MB</span></div>
+          <p class="metric-foot">Waiting for live data</p>
+        </article>
+        <article class="metric-card">
+          <p>Monitored processes</p>
+          <div class="metric-value" id="process-count">—</div>
+          <p class="metric-foot">Processes tracked by AegisOS</p>
+        </article>
+        <article class="metric-card">
+          <p>Active incidents</p>
+          <div class="metric-value" id="incident-count">—</div>
+          <p class="metric-foot">Awaiting incident API</p>
+        </article>
+      </div>
+
+      <div class="content-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">LIVE MONITORING</p><h3>Process activity</h3></div>
+            <span class="pill">Live API pending</span>
+          </div>
+          <div class="empty-state">
+            <div class="empty-icon">▤</div>
+            <h4>No live process data yet</h4>
+            <p>This table will show process names, PIDs, CPU usage, memory, and state when the backend endpoint is connected.</p>
+            <a href="#process-monitor">View process monitor →</a>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">SYSTEM HEALTH</p><h3>Service status</h3></div>
+          </div>
+          <div class="service-row"><span>C process monitor</span><span class="badge pending">Not connected</span></div>
+          <div class="service-row"><span>Process supervisor</span><span class="badge pending">Not connected</span></div>
+          <div class="service-row"><span>Recovery engine</span><span class="badge pending">Not connected</span></div>
+          <div class="service-row"><span>HTTP API</span><span class="badge pending">Not verified</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="process-monitor" class="page">
+      <div class="section-intro"><p class="eyebrow">OBSERVABILITY</p><h2>Process monitor</h2><p>Inspect process identity, resource consumption, and state.</p></div>
+      <article class="panel">
+        <div class="panel-heading"><h3>Monitored processes</h3><span class="pill">Awaiting API</span></div>
+        <div class="table-wrap"><table><thead><tr><th>PID</th><th>Process name</th><th>CPU</th><th>Memory</th><th>State</th></tr></thead><tbody id="process-table"><tr><td colspan="5" class="table-empty">No live process data available yet.</td></tr></tbody></table></div>
+      </article>
+    </section>
+
+    <section id="supervisor" class="page">
+      <div class="section-intro"><p class="eyebrow">LIFECYCLE MANAGEMENT</p><h2>Application supervisor</h2><p>Review supervised applications and their restart status.</p></div>
+      <article class="panel"><div class="panel-heading"><h3>Registered applications</h3><span class="pill">Awaiting API</span></div><div class="empty-state"><div class="empty-icon">◉</div><h4>No application data connected</h4><p>Application registration and lifecycle API routes are not implemented yet.</p></div></article>
+    </section>
+
+    <section id="anomalies" class="page">
+      <div class="section-intro"><p class="eyebrow">DETECTION</p><h2>Anomaly detection</h2><p>Review abnormal resource usage and the rules that triggered alerts.</p></div>
+      <article class="panel"><div class="panel-heading"><h3>Detected anomalies</h3><span class="pill">Awaiting API</span></div><div class="empty-state"><div class="empty-icon">⚠</div><h4>No live anomaly feed connected</h4><p>AegisOS has anomaly-detection code, but dashboard alert delivery still needs integration.</p></div></article>
+    </section>
+
+    <section id="recovery" class="page">
+      <div class="section-intro"><p class="eyebrow">POLICY MANAGEMENT</p><h2>Recovery center</h2><p>Review recovery policies and permitted recovery actions.</p></div>
+      <article class="panel"><div class="panel-heading"><h3>Recovery policies</h3><span class="pill">Awaiting API</span></div><div class="service-row"><span>Alert-only policy</span><span class="badge pending">Backend integration needed</span></div><div class="service-row"><span>Dry-run policy</span><span class="badge pending">Backend integration needed</span></div><div class="service-row"><span>Automatic restart policy</span><span class="badge pending">Backend integration needed</span></div><p class="panel-note">This page does not execute recovery actions. Controls will be added after secure API routes are implemented.</p></article>
+    </section>
+
+    <section id="incidents" class="page">
+      <div class="section-intro"><p class="eyebrow">AUDIT TRAIL</p><h2>Incident reports</h2><p>Review incidents and export recorded results.</p></div>
+      <article class="panel"><div class="panel-heading"><h3>Incident history</h3><span class="pill">Awaiting API</span></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Process</th><th>Incident</th><th>Action</th><th>Outcome</th></tr></thead><tbody><tr><td colspan="5" class="table-empty">Incident history endpoint is not implemented yet.</td></tr></tbody></table></div></article>
+    </section>
+
+    <section id="settings" class="page">
+      <div class="section-intro"><p class="eyebrow">CONFIGURATION</p><h2>Settings</h2><p>Configuration options supported by the AegisOS backend.</p></div>
+      <article class="panel"><h3>Monitoring configuration</h3><div class="service-row"><span>Sampling interval</span><span class="badge pending">Backend setting not connected</span></div><div class="service-row"><span>Recovery policy</span><span class="badge pending">Backend setting not connected</span></div><div class="service-row"><span>API binding</span><span>Loopback address intended</span></div><p class="panel-note">Settings are currently informational; no configuration changes are sent to the backend.</p></article>
+    </section>
+
+    <footer><span>AegisOS · Process supervision and self-recovery</span><span>Dashboard interface prototype</span></footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

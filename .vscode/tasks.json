@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "build", "type": "shell", "command": "make", "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"] },
+    { "label": "test", "type": "shell", "command": "make test", "group": "test", "problemMatcher": ["$gcc"] },
+    { "label": "workloads", "type": "shell", "command": "make workloads", "problemMatcher": ["$gcc"] },
+    { "label": "legacy", "type": "shell", "command": "make legacy", "problemMatcher": ["$gcc"] },
+    { "label": "clean", "type": "shell", "command": "make clean", "problemMatcher": [] }
+  ]
+}
