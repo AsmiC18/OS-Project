@@ -1,11 +1,30 @@
-/*
- * recovery.h - Decide and execute recovery actions on registered applications only; verify outcome; cooldown.
- *
- * STATUS: scaffold only. No declarations yet; see docs/MODULE_DESIGN.md.
- */
+
 #ifndef AEGISOS_RECOVERY_H
 #define AEGISOS_RECOVERY_H
 
-/* TODO: public interface for the recovery module. */
+#include "policy.h"
 
-#endif /* AEGISOS_RECOVERY_H */
+typedef enum {
+    RECOVERY_ACTION_NONE = 0,
+    RECOVERY_ACTION_ALERT,
+    RECOVERY_ACTION_DRY_RUN,
+    RECOVERY_ACTION_RESTART
+} RecoveryAction;
+
+typedef struct {
+    int registered;
+    int authorized;
+    unsigned restarts_used;
+    unsigned seconds_since_last_action;
+} RecoveryContext;
+
+/*
+ * Determine the permitted recovery action.
+ * Returns -1 for invalid arguments, otherwise 0.
+ * The selected action is written to *action.
+ */
+int recovery_decide(const AegisPolicy *policy,
+                    const RecoveryContext *context,
+                    RecoveryAction *action);
+
+#endif
