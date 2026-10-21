@@ -1,78 +1,380 @@
-# AegisOS — Linux Process Supervision and Self-Recovery System
+# AegisOS — Linux Process Monitoring and Supervision
 
-An Operating Systems laboratory project: a lightweight, local C program for Linux that will
-monitor registered applications, detect abnormal resource behaviour, supervise process
-lifecycles, apply configurable recovery policies, and record measurable recovery outcomes,
-with a browser dashboard served by a small C HTTP/JSON API.
+## 1. Project Overview
 
-> **Current state: project scaffold.** The folder structure, build system, documentation
-> and test layout exist. **No monitoring, supervision, anomaly detection, recovery, API or
-> dashboard functionality is implemented yet.** Everything below marked *planned* is a plan.
+AegisOS is a C-based Linux process monitoring and supervision system developed as an Operating Systems laboratory project.
 
-## The problem
+It monitors running processes, collects CPU and memory usage information, detects sustained resource usage anomalies, and provides a process supervisor that can restart programs when they exit unsuccessfully.
 
-Long-lived background applications on Linux can die unexpectedly, consume CPU or memory for
-long periods, or fail repeatedly. Diagnosing and restarting them usually needs a person.
-AegisOS aims to automate observation and (policy-limited) recovery, and to measure how well
-that recovery works. See `docs/PROJECT_OVERVIEW.md`.
+The project includes a command-line interface (CLI), an HTTP API, a browser dashboard, configurable policies, and automated tests.
 
-## Planned capabilities (none implemented yet)
+**Important:** Anomaly detection and process supervision currently operate separately. Detecting high CPU or memory usage does not automatically restart the affected process.
 
-| Area | Planned |
-|---|---|
-| Monitoring | Read `/proc`, CPU%/RSS/state per process, configurable interval, handle vanished PIDs |
-| Supervision | Launch registered apps, track exit status, restart with exponential backoff and limits |
-| Anomaly detection | Sustained-CPU, memory, crash and restart-loop rules with severity and explanations |
-| Recovery | Policy-driven: alert-only, dry-run, restart, manual approval, cooldown, verification |
-| Reporting | Structured incident log, filtering, CSV export, recovery statistics |
-| API + dashboard | Localhost JSON API; HTML/CSS/vanilla-JS dashboard (7 sections) |
-| Extension | cgroups v2 resource budgets (after the core works) |
+## 2. Features
 
-Automated actions will only ever target applications registered with, or launched by, AegisOS.
+- Monitor running Linux processes.
+- Collect CPU and memory usage information.
+- Detect sustained high CPU and memory usage.
+- Configure anomaly thresholds and detection settings.
+- Launch and supervise child processes.
+- Retry failed programs using restart limits and exponential backoff.
+- Apply recovery policy decisions.
+- Provide an HTTP API that returns JSON data.
+- Display process information and anomalies through a web dashboard.
+- Generate CSV reports from supplied report data.
+- Run automated tests using Make.
 
-## Layout
+## 3. Technologies Used
 
-```
-include/    public headers (one per module)          src/        module implementations + main.c
-dashboard/  index.html, styles.css, app.js           tests/      C and shell tests (currently SKIP stubs)
-workloads/  controlled test programs (stubs)         config/     policies.example.conf (draft)
-data/ logs/ reports/   runtime output (git-ignored)  scripts/    build.sh, run.sh, clean.sh
-docs/       design, plan, API, testing documents     legacy/     original baseline code (reference only)
-```
+- **C:** Main implementation language.
+- **Linux:** Operating system used for process monitoring and supervision.
+- **GCC:** C compiler.
+- **GNU Make:** Build automation.
+- **HTML, CSS, and JavaScript:** Dashboard interface.
+- **HTTP and JSON:** Communication between the backend and dashboard.
+- **Bash:** Terminal commands and test scripts.
+- **Git and GitHub:** Version control.
 
-## Build and run (works on the scaffold)
+## 4. Requirements
 
-Requires Linux (or Ubuntu on WSL2), `gcc` (or `cc`) and `make`. For debugging: `gdb`.
+Install or ensure you have the following in Ubuntu or Ubuntu on WSL2:
+
+- GCC
+- GNU Make
+- Python 3
+- A web browser
+
+Check whether the tools are installed:
 
 ```bash
-make              # builds build/aegisos
-./build/aegisos   # prints a scaffold banner only
-make test         # runs tests; stubs report SKIP (exit 77), not PASS
-make workloads    # builds workload stubs into build/workloads/
-make legacy       # builds the original baseline shell, for reference
-make clean
+gcc --version
+make --version
+python3 --version
 ```
 
-Wrappers: `scripts/build.sh`, `scripts/run.sh`, `scripts/clean.sh [--runtime]`.
+## 5. Build the Project
 
-**VS Code:** open the `AegisOS/` folder. Install the *C/C++* extension. `Ctrl+Shift+B` builds;
-Run and Debug → "Debug aegisos" launches under gdb. On Windows use the *WSL* extension and
-open the folder from inside Ubuntu (clone/extract under `~`, not `/mnt/c`, for speed).
+Open an Ubuntu terminal and navigate to the project directory:
 
-## Design decisions at scaffold time
+```bash
+cd /mnt/c/Users/idunn/Downloads/OS-Project-member-2
+```
 
-- **Legacy code** is preserved in `legacy/aegisos-core/` and analysed in `docs/LEGACY_ANALYSIS.md`.
-  Its shell, scheduling simulators, IPC and synchronization demos are outside the new scope and
-  are not linked into the main binary.
-- **Modules:** `process` = parsing a single PID's `/proc` files; `monitor` = sampling schedule,
-  CPU% deltas and history. They are separate on purpose; merge them if the code turns out tiny.
-- **Persistence:** structured append-only files + CSV export first. SQLite stays optional.
-- **Added beyond the requested tree:** `legacy/`, `docs/LEGACY_ANALYSIS.md`, `.vscode/c_cpp_properties.json`
-  (IntelliSense include path).
-- **LICENSE** is a placeholder; the team must choose one.
+Build the project:
 
-## Documentation
+```bash
+make clean
+make
+```
 
-`docs/PROJECT_OVERVIEW.md` · `ARCHITECTURE.md` · `MODULE_DESIGN.md` · `API_SPECIFICATION.md` ·
-`IMPLEMENTATION_PLAN.md` · `TESTING_PLAN.md` · `PERFORMANCE_EVALUATION.md` · `USER_MANUAL.md` ·
-`TROUBLESHOOTING.md` · `TEAM_RESPONSIBILITIES.md` · `LEGACY_ANALYSIS.md`
+The compiled executable is located at:
+
+```text
+build/aegisos
+```
+
+Check the available commands:
+
+```bash
+./build/aegisos --help
+```
+
+Check the version:
+
+```bash
+./build/aegisos --version
+```
+
+## 6. Run the Tests
+
+From the project root, run:
+
+```bash
+make test
+```
+
+The current test suite has reported 11 passed and 0 failed.
+
+The tests cover selected behaviors, including invalid inputs, process monitoring, and process supervision. Passing tests do not necessarily mean every dashboard feature or recovery workflow is implemented.
+
+## 7. Process Monitoring
+
+AegisOS can monitor an existing Linux process using its PID.
+
+First, start a temporary process:
+
+```bash
+sleep 60 &
+PID=$!
+echo "$PID"
+```
+
+Monitor it for three samples:
+
+```bash
+./build/aegisos --monitor "$PID" 3
+```
+
+The command displays information such as:
+
+- Process ID
+- Process name
+- Process state
+- CPU usage
+- Memory usage
+
+The monitor samples approximately once per second. If the sample count is omitted, the default is 10 samples.
+
+Stop the temporary process when finished:
+
+```bash
+kill "$PID"
+```
+
+## 8. Process Supervision
+
+AegisOS can launch a program and supervise its execution.
+
+General syntax:
+
+```bash
+./build/aegisos --supervise PROGRAM [ARGS...]
+```
+
+To test a program that exits successfully:
+
+```bash
+./build/aegisos --supervise sh -c 'exit 0'
+```
+
+To demonstrate restart attempts after an unsuccessful exit:
+
+```bash
+./build/aegisos --supervise sh -c 'exit 1'
+```
+
+The second command intentionally exits with a failure status. The supervisor attempts to restart it according to its configured limits.
+
+The current CLI supervisor uses:
+
+- Maximum restart attempts: 3
+- Initial backoff delay: 1 second
+- Maximum backoff delay: 60 seconds
+
+The delay increases between successive attempts. When the restart limit is reached, the supervisor stops retrying.
+
+Use a test program for this demonstration rather than a critical application.
+
+## 9. Start the HTTP API
+
+Open a terminal in the project directory and run:
+
+```bash
+./build/aegisos --api 8080
+```
+
+Keep this terminal open while using the API.
+
+The server listens on the local loopback interface at port 8080.
+
+Open these URLs in your browser:
+
+| URL | Purpose |
+|---|---|
+| http://localhost:8080/health | Check API health |
+| http://localhost:8080/api/status | View service status |
+| http://localhost:8080/api/processes | View process information |
+| http://localhost:8080/api/metrics | View process metrics |
+| http://localhost:8080/api/anomalies | View detected anomalies |
+
+The health endpoint should return:
+
+```json
+{"status":"ok"}
+```
+
+The other endpoints return JSON containing the corresponding information.
+
+## 10. Open the Web Dashboard
+
+Keep the API server running.
+
+Open a second Ubuntu terminal and navigate to the project directory:
+
+```bash
+cd /mnt/c/Users/idunn/Downloads/OS-Project-member-2
+```
+
+Start the dashboard web server:
+
+```bash
+python3 -m http.server 8000 --directory dashboard
+```
+
+Keep this terminal open.
+
+Open the following address in your browser:
+
+http://localhost:8000
+
+The dashboard provides sections for:
+
+- Overview
+- Process Monitor
+- Application Supervisor
+- Anomaly Detection
+- Recovery Center
+- Incident Reports
+- Settings
+
+The dashboard requests information from the API approximately every three seconds.
+
+**Keep both the API server and dashboard server running while using the dashboard.**
+
+To stop either server, press `Ctrl+C` in its terminal.
+
+## 11. Test Anomaly Detection
+
+This test demonstrates how AegisOS detects sustained high CPU usage.
+
+### Step 1: Start the API
+
+Run:
+
+```bash
+./build/aegisos --api 8080
+```
+
+If it is already running, leave it running.
+
+### Step 2: Open the dashboard
+
+In a separate terminal, start the dashboard server if it is not already running:
+
+```bash
+python3 -m http.server 8000 --directory dashboard
+```
+
+Open http://localhost:8000 in your browser.
+
+### Step 3: Create a CPU-intensive process
+
+Open another Ubuntu terminal and run:
+
+```bash
+yes > /dev/null &
+PID=$!
+echo "Test process PID: $PID"
+```
+
+This creates a process that consumes CPU resources.
+
+### Step 4: Wait for detection
+
+Keep the dashboard open for approximately 10–15 seconds so that the API receives repeated process requests.
+
+Then open:
+
+http://localhost:8080/api/anomalies
+
+The default anomaly detector uses an 80% CPU threshold and requires three consecutive above-threshold samples.
+
+If the process exceeds the threshold for enough samples, the API should report a `high_cpu` anomaly.
+
+### Step 5: Stop the test process
+
+Run this in the terminal where you started the workload:
+
+```bash
+kill "$PID"
+```
+
+This test demonstrates detection and reporting. It does not demonstrate automatic recovery from high CPU usage because that workflow is not currently integrated.
+
+## 12. Recovery Policy
+
+AegisOS includes a policy engine and a recovery decision module.
+
+The available recovery modes are:
+
+- `alert_only`: Selects an alert action.
+- `dry_run`: Selects a proposed action without executing recovery.
+- `auto_restart`: Can select a restart action if the required policy conditions are satisfied.
+
+The policy can consider thresholds, restart limits, cooldown periods, and backoff settings.
+
+The recovery decision module does not itself restart processes. The actual restart behavior currently exists in the separate CLI supervisor.
+
+## 13. Current Limitations
+
+The current implementation has the following limitations:
+
+1. High CPU or memory usage is detected and reported but does not automatically trigger a restart.
+2. The CLI supervisor is not directly controlled by the web dashboard.
+3. The recovery policy engine makes decisions but does not implement a complete automatic recovery workflow.
+4. Anomaly history is stored in memory and is lost when the API server restarts.
+5. Some dashboard sections display information rather than providing interactive controls.
+6. The dashboard does not provide a complete application registration and management workflow.
+
+These features can be considered future enhancements.
+
+## 14. Project Structure
+
+```text
+OS-Project-member-2/
+├── include/       Public C header files
+├── src/           C source files and main program
+├── tests/         Automated tests
+├── dashboard/     HTML, CSS, and JavaScript files
+├── config/        Example configuration files
+├── docs/          Project documentation
+├── build/         Compiled executable and test binaries
+├── Makefile       Build and test instructions
+└── README.md      Project overview and usage guide
+```
+
+The `build/` directory is generated by the build process and can be recreated using `make`.
+
+## 15. Troubleshooting
+
+### Error: `No such file or directory`
+
+Make sure you are in the project root and have built the project:
+
+```bash
+make
+```
+
+### Error: `Address already in use`
+
+Another process may already be using port 8080 or 8000.
+
+Stop the previous server with `Ctrl+C` in its terminal before starting it again.
+
+### Dashboard opens but shows no process data
+
+Check that the API is running:
+
+http://localhost:8080/health
+
+It should return:
+
+```json
+{"status":"ok"}
+```
+
+Also make sure the dashboard is using the expected API address and port.
+
+### No anomaly appears
+
+Make sure the test workload is still running, process endpoints are being requested repeatedly, and enough time has passed for the required consecutive samples.
+
+### Browser reports `favicon.ico` as missing
+
+A missing favicon is generally harmless and does not prevent the dashboard from functioning.
+
+## 16. Conclusion
+
+AegisOS demonstrates Linux process monitoring, resource anomaly detection, process supervision, restart limits, exponential backoff, policy-based recovery decisions, HTTP API development, and browser-based visualization.
+
+The current implementation can detect sustained resource anomalies and restart supervised programs that exit unsuccessfully. Integrating anomaly detection with automatic policy-controlled recovery remains future work.
