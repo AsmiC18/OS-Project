@@ -1,0 +1,12 @@
+{
+  "files.associations": { "*.h": "c", "*.conf": "ini" },
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.tabSize": 4,
+  "[makefile]": { "editor.insertSpaces": false },
+  "C_Cpp.default.cStandard": "gnu11",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/include"
+  ],
+  "liveServer.settings.port": 5502
+}

@@ -1,325 +1,95 @@
+#include "aegisos_sim.h"
+
+#include <errno.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/wait.h>
 #include <stdlib.h>
-#include "process.h"
-#include "health.h"
-#include "monitor.h"
-#include "healing.h"
-#include "logger.h"
-#include "analysis.h"
-#include "scheduler.h"
-#include "ipc.h"
-#include "sync.h"
-#include "autoheal.h"
-#define MAX_INPUT 200
-#define MAX_ARGS 20
-#define MAX_HISTORY 50
+#include <string.h>
 
-int main() {
-
-    char input[MAX_INPUT];
-    char *args[MAX_ARGS];
-
-    char history[MAX_HISTORY][MAX_INPUT];
-    int history_count = 0;
-
-    printf("====================================\n");
-    printf("          AEGISOS CORE v1.0\n");
-    printf(" Intelligent Linux Process Shell\n");
-    printf("====================================\n");
-
-    while (1) {
-
-        printf("\naegis> ");
-
-        if (fgets(input, sizeof(input), stdin) == NULL) {
-            break;
-        }
-
-        input[strcspn(input, "\n")] = '\0';
-
-        if (strlen(input) == 0) {
-            continue;
-        }
-
-        /* Store command in history */
-        if (history_count < MAX_HISTORY) {
-            strcpy(history[history_count], input);
-            history_count++;
-        }
-
-        /* Exit */
-        if (strcmp(input, "exit") == 0) {
-            break;
-        }
-
-        /* Help */
-        if (strcmp(input, "help") == 0) {
-
-            printf("\nAegisOS Commands:\n");
-            printf("  help      - Show available commands\n");
-            printf("  cd        - Change directory\n");
-            printf("  pwd       - Show current directory\n");
-            printf("  clear     - Clear terminal\n");
-            printf("  history   - Show command history\n");
-            printf("  exit      - Exit AegisOS\n");
-
-            continue;
-        }
-
-        /* Clear */
-        if (strcmp(input, "clear") == 0) {
-
-            system("clear");
-            continue;
-        }
-
-        /* History */
-        if (strcmp(input, "history") == 0) {
-
-            for (int j = 0; j < history_count; j++) {
-                printf("%d  %s\n", j + 1, history[j]);
-            }
-
-            continue;
-        }
-
-        /* Split command */
-        int i = 0;
-
-        char *token = strtok(input, " ");
-
-        while (token != NULL && i < MAX_ARGS - 1) {
-
-            args[i] = token;
-            i++;
-
-            token = strtok(NULL, " ");
-        }
-
-        args[i] = NULL;
-
-        /* Built-in pwd */
-        if (strcmp(args[0], "pwd") == 0) {
-
-            char directory[500];
-
-            getcwd(directory, sizeof(directory));
-
-            printf("%s\n", directory);
-
-            continue;
-        }
-
-        /* Built-in cd */
-        if (strcmp(args[0], "cd") == 0) {
-
-            if (args[1] == NULL) {
-
-                printf("Usage: cd <directory>\n");
-
-            } else if (chdir(args[1]) != 0) {
-
-                perror("cd");
-
-            }
-
-            continue;
-        }
-        if (strcmp(args[0], "processes") == 0) {
-
-    list_processes();
-
-    continue;
-}
-/* Kill process */
-
-if (strcmp(args[0], "kill") == 0) {
-
-    if (args[1] == NULL) {
-        printf("Usage: kill <PID>\n");
-    } else {
-        kill_process(atoi(args[1]));
-    }
-
-    continue;
+static void usage(FILE *f) {
+    fprintf(f,
+        "AegisOS CPU-allocation simulator\n\n"
+        "Usage:\n"
+        "  aegisos-sim run --policy NAME --scenario NAME [--seed N] [--duration MS] [--csv FILE]\n"
+        "  aegisos-sim experiment [--runs N] [--duration MS] [--out FILE]\n"
+        "  aegisos-sim policies\n\n"
+        "Policies: equal, fixed_high_share, foreground_priority, background_cap, adaptive\n"
+        "Scenarios: steady, bursty, sustained, mixed\n");
 }
 
-
-/* Suspend process */
-
-if (strcmp(args[0], "suspend") == 0) {
-
-    if (args[1] == NULL) {
-        printf("Usage: suspend <PID>\n");
-    } else {
-        suspend_process(atoi(args[1]));
-    }
-
-    continue;
-}
-
-
-/* Resume process */
-
-if (strcmp(args[0], "resume") == 0) {
-
-    if (args[1] == NULL) {
-        printf("Usage: resume <PID>\n");
-    } else {
-        resume_process(atoi(args[1]));
-    }
-
-    continue;
-}
-/* Show process priority */
-
-if (strcmp(args[0], "priority") == 0) {
-
-    if (args[1] == NULL) {
-
-        printf("Usage: priority <PID>\n");
-
-    } else {
-
-        show_priority(atoi(args[1]));
-    }
-
-    continue;
-}
-
-
-/* Change process priority */
-
-if (strcmp(args[0], "setpriority") == 0) {
-
-    if (args[1] == NULL || args[2] == NULL) {
-
-        printf("Usage: setpriority <PID> <nice_value>\n");
-
-    } else {
-
-        set_process_priority(
-            atoi(args[1]),
-            atoi(args[2])
-        );
-    }
-
-    continue;
-}
-/* Resource Monitor */
-
-if (strcmp(args[0], "monitor") == 0) {
-
-    monitor_processes();
-
-    continue;
-}
-else if (strcmp(args[0], "health") == 0)
-{
-    show_health();
-    continue;
-}
-else if (strcmp(args[0], "heal") == 0)
-{
-    if (args[1] == NULL || args[2] == NULL || args[3] == NULL)
-    {
-        printf("Usage: heal <PID> <SCORE> <CPU>\n");
-    }
-    else
-    {
-        int pid = atoi(args[1]);
-        int score = atoi(args[2]);
-        float cpu = atof(args[3]);
-
-        analyze_process_health(pid, score, cpu);
-    }
-
-    continue;
-}
-else if (strcmp(args[0], "logs") == 0)
-{
-    show_logs();
-    continue;
-}
-
-else if (strcmp(args[0], "analyze") == 0)
-{
-    if (args[1] == NULL)
-    {
-        printf("Usage: analyze <PID>\n");
-    }
-    else
-    {
-        int pid = atoi(args[1]);
-
-        analyze_process(pid);
-    }
-
-    continue;
-}
-else if (strcmp(args[0], "fcfs") == 0)
-{
-    fcfs_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "rr") == 0)
-{
-    round_robin_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "priority_schedule") == 0)
-{
-    priority_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "sjf") == 0)
-{
-    sjf_scheduling();
-    continue;
-}
-else if (strcmp(args[0], "ipc") == 0)
-{
-    pipe_communication();
-    continue;
-}
-else if (strcmp(args[0], "sync") == 0)
-{
-    semaphore_demo();
-    continue;
-}
-else if (strcmp(args[0], "autoheal") == 0)
-{
-    auto_heal();
-    continue;
-}
-        /* External command */
-
-        pid_t pid = fork();
-
-        if (pid == 0) {
-
-            execvp(args[0], args);
-
-            perror("Command failed");
-
-            exit(1);
-        }
-
-        else if (pid > 0) {
-
-            wait(NULL);
-        }
-
-        else {
-
-            perror("fork");
-        }
-    }
-
-    printf("\nAegisOS terminated.\n");
-
+static int parse_long(const char *s, long min, long max, long *out) {
+    char *end = NULL;
+    long v;
+    errno = 0;
+    v = strtol(s, &end, 10);
+    if (errno || !end || *end || end == s || v < min || v > max) return -1;
+    *out = v;
     return 0;
+}
+
+static void print_result(const SimResult *r) {
+    printf("Policy: %s\nScenario: %s\nSeed: %u\nDuration: %d ms\n",
+           r->policy, r->scenario, r->seed, r->duration_ms);
+    printf("Foreground requests generated/completed: %lu/%lu\n", r->foreground_requests_generated, r->foreground_requests);
+    printf("Foreground mean latency: %.2f ms\n", r->foreground_mean_latency_ms);
+    printf("Foreground p95 latency: %.2f ms\n", r->foreground_p95_latency_ms);
+    printf("Foreground deadline-miss rate: %.2f%%\n", r->deadline_miss_rate * 100.0);
+    printf("Background CPU work: %.0f ms\n", r->background_cpu_ms);
+    printf("Background jobs generated/completed/on-time: %lu/%lu/%lu\n", r->background_jobs_generated, r->background_jobs_completed, r->background_jobs_on_time);
+    printf("Background deadline-miss rate (resolved jobs): %.2f%%\n", r->background_deadline_miss_rate * 100.0);
+    printf("CPU utilization: %.2f%%\n", r->cpu_utilization * 100.0);
+    printf("Adaptive allocation changes: %lu\n", r->controller_changes);
+    printf("Final foreground share: %.2f\n", r->final_foreground_share);
+}
+
+int main(int argc, char **argv) {
+    char err[256];
+    if (argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "help") == 0) { usage(stdout); return argc < 2 ? 0 : 0; }
+    if (strcmp(argv[1], "--version") == 0) { puts("AegisOS simulator 1.0"); return 0; }
+    if (strcmp(argv[1], "policies") == 0) {
+        int i;
+        puts("Policies:"); for (i = 0; i < POLICY_COUNT; i++) printf("  %s\n", policy_name((Policy)i));
+        puts("Scenarios:"); for (i = 0; i < SCENARIO_COUNT; i++) printf("  %s\n", scenario_name((Scenario)i));
+        return 0;
+    }
+    if (strcmp(argv[1], "run") == 0) {
+        Policy policy = POLICY_ADAPTIVE;
+        Scenario scenario = SCENARIO_BURSTY;
+        uint32_t seed = 1;
+        long duration = 10000, n;
+        const char *csv = NULL;
+        int i, have_policy = 0, have_scenario = 0;
+        SimConfig cfg;
+        SimResult result;
+        for (i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--policy") == 0 && i + 1 < argc) { if (parse_policy(argv[++i], &policy)) { fprintf(stderr, "unknown policy\n"); return 2; } have_policy = 1; }
+            else if (strcmp(argv[i], "--scenario") == 0 && i + 1 < argc) { if (parse_scenario(argv[++i], &scenario)) { fprintf(stderr, "unknown scenario\n"); return 2; } have_scenario = 1; }
+            else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) { if (parse_long(argv[++i], 1, 2147483647L, &n)) { fprintf(stderr, "invalid seed\n"); return 2; } seed = (uint32_t)n; }
+            else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc) { if (parse_long(argv[++i], 100, 3600000, &duration)) { fprintf(stderr, "duration must be 100..3600000 ms\n"); return 2; } }
+            else if (strcmp(argv[i], "--csv") == 0 && i + 1 < argc) csv = argv[++i];
+            else { usage(stderr); return 2; }
+        }
+        if (!have_policy || !have_scenario) { fprintf(stderr, "run requires --policy and --scenario\n"); return 2; }
+        sim_config_defaults(&cfg, policy, scenario, seed); cfg.duration_ms = (int)duration;
+        if (simulate(&cfg, &result, err, sizeof(err)) != 0) { fprintf(stderr, "simulation failed: %s\n", err); return 1; }
+        print_result(&result);
+        if (csv) { FILE *f = fopen(csv, "w"); if (!f) { perror(csv); return 1; } csv_write_header(f); csv_write_result(f, &result); fclose(f); printf("CSV written to %s\n", csv); }
+        return 0;
+    }
+    if (strcmp(argv[1], "experiment") == 0) {
+        long runs = 20, duration = 10000, n;
+        const char *out = "results/raw_results.csv";
+        int i;
+        for (i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--runs") == 0 && i + 1 < argc) { if (parse_long(argv[++i], 1, 10000, &n)) { fprintf(stderr, "invalid run count\n"); return 2; } runs = n; }
+            else if (strcmp(argv[i], "--duration") == 0 && i + 1 < argc) { if (parse_long(argv[++i], 100, 3600000, &n)) { fprintf(stderr, "invalid duration\n"); return 2; } duration = n; }
+            else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) out = argv[++i];
+            else { usage(stderr); return 2; }
+        }
+        if (run_experiment_matrix(out, (int)runs, (int)duration, err, sizeof(err)) != 0) { fprintf(stderr, "experiment failed: %s\n", err); return 1; }
+        printf("Experiment complete: %d policies x %d scenarios x %ld runs = %ld rows\n", POLICY_COUNT, SCENARIO_COUNT, runs, POLICY_COUNT * SCENARIO_COUNT * runs);
+        printf("Raw results: %s\n", out);
+        return 0;
+    }
+    usage(stderr);
+    return 2;
 }

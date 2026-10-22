@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "make",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "make test",
+      "group": "test",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "experiment",
+      "type": "shell",
+      "command": "make experiment",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "clean",
+      "type": "shell",
+      "command": "make clean",
+      "problemMatcher": []
+    },
+    {
+      "label": "live dashboard",
+      "type": "shell",
+      "command": "bash scripts/start_aegisos.sh",
+      "problemMatcher": []
+    },
+    {
+      "label": "live-control prerequisites",
+      "type": "shell",
+      "command": "python3 scripts/aegisos_live.py doctor",
+      "problemMatcher": []
+    }
+  ]
+}
