@@ -1,0 +1,15 @@
+build/
+__pycache__/
+*.pyc
+results/raw_results.csv
+results/summary.csv
+results/REPORT.md
+results/*.png
+live_data/
+
+.vscode/
+live_data/
+*.save
+*.jsonl
+__pycache__/
+*.pyc

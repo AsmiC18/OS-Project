@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Select a defensible fixed baseline, then evaluate AegisOS adaptive CPU weights against it."""
+import argparse, csv, json, math, subprocess, sys
+from pathlib import Path
+from datetime import datetime
+
+CANDIDATES = [
+    {"name": "equal_500_500", "foreground": 500, "background": 500},
+    {"name": "moderate_600_400", "foreground": 600, "background": 400},
+    {"name": "strong_800_200", "foreground": 800, "background": 200},
+    {"name": "legacy_600_100", "foreground": 600, "background": 100},
+]
+
+def percentile(values, p):
+    values = sorted(values)
+    if not values: return 0.0
+    k = (len(values)-1)*p; lo = math.floor(k); hi = math.ceil(k)
+    return values[lo] if lo == hi else values[lo]*(hi-k)+values[hi]*(k-lo)
+
+def summarize_csv(path):
+    values=[]
+    with path.open(newline='', encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            try: values.append(float(row['probe_latency_ms']))
+            except (ValueError, KeyError): pass
+    if not values: raise RuntimeError(f"No probe measurements found in {path}")
+    return {'samples':len(values),'mean_ms':sum(values)/len(values),'p50_ms':percentile(values,.50),'p95_ms':percentile(values,.95),'max_ms':max(values)}
+
+def background_units(path):
+    if not path or not path.is_file(): return 0
+    vals=[]
+    with path.open(newline='',encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            try: vals.append(int(row['completed_chunks']))
+            except (ValueError,KeyError): pass
+    return max(vals) if vals else 0
+
+def aggregate(probe_files, label, background_files=None):
+    """Aggregate probe latency and the matching background progress logs."""
+    background_files = background_files or []
+    rows=[]
+    for index, probe_path in enumerate(probe_files):
+        row = summarize_csv(probe_path)
+        background_path = background_files[index] if index < len(background_files) else None
+        row["background_chunks_completed"] = background_units(background_path)
+        rows.append(row)
+    all_values=[]
+    for p in probe_files:
+        with p.open(newline='',encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                try: all_values.append(float(row['probe_latency_ms']))
+                except (ValueError,KeyError): pass
+    if not all_values: raise RuntimeError(f'No {label} probe measurements were collected')
+    return {'mode':label,'samples':len(all_values),'mean_ms':sum(all_values)/len(all_values),
+            'p50_ms':percentile(all_values,.50),'p95_ms':percentile(all_values,.95),'max_ms':max(all_values),
+            'mean_background_chunks_per_run':sum(r['background_chunks_completed'] for r in rows)/len(rows),
+            'run_summaries':rows}
+
+def mean_ci(values):
+    n=len(values); mean=sum(values)/n
+    if n < 2: return {'mean':mean,'low':None,'high':None}
+    sd=math.sqrt(sum((x-mean)**2 for x in values)/(n-1))
+    tcrit={2:12.706,3:4.303,4:3.182,5:2.776,6:2.571,7:2.447,8:2.365,9:2.306,10:2.262}.get(n,1.96)
+    half=tcrit*sd/math.sqrt(n)
+    return {'mean':mean,'low':mean-half,'high':mean+half}
+
+def difference_ci(baseline, adaptive):
+    n1,n2=len(baseline),len(adaptive); m1=sum(baseline)/n1; m2=sum(adaptive)/n2
+    v1=sum((x-m1)**2 for x in baseline)/(n1-1) if n1>1 else 0.0
+    v2=sum((x-m2)**2 for x in adaptive)/(n2-1) if n2>1 else 0.0
+    se=math.sqrt(v1/n1+v2/n2)
+    denom=(v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1) if n1>1 and n2>1 else 0.0
+    df=((v1/n1+v2/n2)**2/denom) if denom else n1+n2-2
+    table=[(2,4.303),(3,3.182),(4,2.776),(5,2.571),(6,2.447),(7,2.365),(8,2.306),(9,2.262),(10,2.228),(11,2.201),(12,2.179),(15,2.131),(20,2.086),(30,2.042)]
+    tcrit=next((t for d,t in table if df<=d),1.96)
+    diff=m1-m2
+    return {'mean_reduction_ms':diff,'low':diff-tcrit*se,'high':diff+tcrit*se,'confidence_level':0.95,'method':'Approximate Welch t interval across independent run-level means'}
+
+def run_trials(benchmark, root, label, mode, repeats, a, weights=None, policy_path=None, status_fn=None, progress=None):
+    probes=[]; backgrounds=[]; summaries=[]
+    for rep in range(1,repeats+1):
+        if status_fn: status_fn('running', f'Running {label} test {rep} of {repeats}', current_mode=label, repetition=rep, repeats=repeats, **(progress or {}))
+        cmd=[sys.executable,str(benchmark),'--mode',mode,'--duration',str(a.duration),'--log-dir',str(root),
+             '--interval',str(a.interval),'--probe-interval',str(a.probe_interval),'--work',str(a.work),
+             '--latency-threshold-ms',str(a.latency_threshold_ms),'--label',label]
+        if mode == 'fixed': cmd += ['--fixed-foreground-weight',str(weights['foreground']),'--fixed-background-weight',str(weights['background'])]
+        if mode == 'adaptive' and policy_path: cmd += ['--policy-config',str(policy_path)]
+        subprocess.run(cmd,check=True)
+        pfiles=sorted(root.glob(f'live-probes-{label}-*.csv'),key=lambda p:p.stat().st_mtime_ns)
+        bfiles=sorted(root.glob(f'live-background-{label}-*.csv'),key=lambda p:p.stat().st_mtime_ns)
+        if len(pfiles)<rep: raise RuntimeError(f'Missing {label} probe log for repetition {rep}')
+        pp=pfiles[-1]; bp=bfiles[-1] if bfiles else None
+        sm=summarize_csv(pp); sm.update({'repetition':rep,'background_chunks_completed':background_units(bp)})
+        probes.append(pp); backgrounds.append(bp); summaries.append(sm)
+    return {'probe_files':probes,'background_files':backgrounds,'runs':summaries,'aggregate':aggregate(probes,label,backgrounds)}
+
+def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--duration',type=int,default=30,help='seconds per test repetition')
+    ap.add_argument('--repeats',type=int,default=3,help='repetitions per policy (2-10)')
+    ap.add_argument('--log-dir',default='live_data/comparison')
+    ap.add_argument('--interval',type=float,default=1.0)
+    ap.add_argument('--probe-interval',type=float,default=.2)
+    ap.add_argument('--work',type=int,default=250000)
+    ap.add_argument('--latency-threshold-ms',type=float,default=8.0)
+    ap.add_argument('--min-latency-improvement',type=float,default=10.0)
+    ap.add_argument('--min-background-retention',type=float,default=95.0)
+    ap.add_argument('--candidate-background-retention',type=float,default=95.0,help='minimum fixed-policy background throughput relative to equal-weight policy')
+    a=ap.parse_args()
+    if a.duration < 10: ap.error('--duration must be at least 10 seconds')
+    if not 2 <= a.repeats <= 10: ap.error('--repeats must be between 2 and 10')
+    root=Path(a.log_dir); root.mkdir(parents=True,exist_ok=True)
+    status_path=root/'comparison_status.json'; results_path=root/'comparison_results.json'; report=root/'LIVE_COMPARISON_REPORT.md'
+    policy_path=root/'selected_policy.json'; evaluation_path=root/'policy_evaluation.json'; fixed_baseline_path=root/'selected_fixed_baseline.json'
+    def status(state,message,**extra):
+        status_path.write_text(json.dumps({'state':state,'message':message,'updated_at':datetime.now().astimezone().isoformat(timespec='seconds'),**extra},indent=2),encoding='utf-8')
+    # Delete only transient benchmark logs; preserve prior accepted policy until a new candidate is accepted.
+    for pattern in ('live-probes-*.csv','live-background-*.csv','live-benchmark-events-*.jsonl'):
+        for old in root.glob(pattern): old.unlink(missing_ok=True)
+    for p in (results_path,report,evaluation_path): p.unlink(missing_ok=True)
+    benchmark=Path(__file__).with_name('aegisos_live_benchmark.py')
+    try:
+        status('running','Selecting a fixed baseline from preliminary candidate tests',phase='baseline_selection',total_candidate_runs=len(CANDIDATES)*a.repeats*a.duration)
+        candidate_results=[]
+        # Equal weights provide the throughput reference for candidate fixed policies.
+        for candidate in CANDIDATES:
+            trials=run_trials(benchmark,root,candidate['name'],'fixed',a.repeats,a,weights=candidate,status_fn=status,progress={'phase':'baseline_selection'})
+            ag=trials['aggregate']; candidate_results.append({'candidate':candidate,'aggregate':ag,'runs':trials['runs']})
+        equal=next(x for x in candidate_results if x['candidate']['name']=='equal_500_500')
+        equal_bg=equal['aggregate']['mean_background_chunks_per_run']
+        for item in candidate_results:
+            bg=item['aggregate']['mean_background_chunks_per_run']
+            item['background_retention_vs_equal_pct']=(bg/equal_bg*100.0) if equal_bg>0 else None
+            item['eligible']=(item['background_retention_vs_equal_pct'] is not None and item['background_retention_vs_equal_pct'] >= a.candidate_background_retention)
+        eligible=[x for x in candidate_results if x['eligible']]
+        if not eligible:
+            # Explicit conservative fallback; report that no candidate met the constraint.
+            selected=equal; selection_note='No candidate met the background-retention constraint; equal weights selected as conservative fallback, and the selection is flagged.'
+            selection_valid=False
+        else:
+            selected=min(eligible,key=lambda x:x['aggregate']['p95_ms'])
+            selection_note='Lowest-p95-latency fixed candidate among those meeting the predefined background-retention constraint.'
+            selection_valid=True
+        selected_info={'schema_version':1,'selected_at':datetime.now().astimezone().isoformat(timespec='seconds'),
+                       'candidate':selected['candidate'],'selection_rule':{'reference':'equal_500_500','minimum_background_retention_percent':a.candidate_background_retention,
+                       'rule':'Select the candidate with lowest p95 latency among fixed policies retaining the required percentage of equal-weight background throughput.'},
+                       'selection_valid':selection_valid,'selection_note':selection_note,
+                       'preliminary_results':[{ 'name':x['candidate']['name'],'foreground_weight':x['candidate']['foreground'],'background_weight':x['candidate']['background'],
+                           'p95_ms':x['aggregate']['p95_ms'],'mean_background_chunks_per_run':x['aggregate']['mean_background_chunks_per_run'],
+                           'background_retention_vs_equal_pct':x['background_retention_vs_equal_pct'],'eligible':x['eligible']} for x in candidate_results]}
+        fixed_baseline_path.write_text(json.dumps(selected_info,indent=2),encoding='utf-8')
+        # Final comparison uses fresh repetitions, not the preliminary selection data.
+        status('running','Running final comparison against selected fixed policy',phase='final_comparison',selected_fixed_policy=selected['candidate']['name'])
+        final_fixed=run_trials(benchmark,root,'selected_fixed','fixed',a.repeats,a,weights=selected['candidate'],status_fn=status,progress={'phase':'final_comparison'})
+        final_adaptive=run_trials(benchmark,root,'adaptive','adaptive',a.repeats,a,weights=selected['candidate'],policy_path=policy_path,status_fn=status,progress={'phase':'final_comparison'})
+        base=final_fixed['aggregate']; adap=final_adaptive['aggregate']
+        base_means=[r['mean_ms'] for r in final_fixed['runs']]; adap_means=[r['mean_ms'] for r in final_adaptive['runs']]
+        changes={k:(base[k]-adap[k])/base[k]*100 if base[k] else 0.0 for k in ('mean_ms','p50_ms','p95_ms','max_ms')}
+        bg_base=base['mean_background_chunks_per_run']; bg_adap=adap['mean_background_chunks_per_run']
+        bg_change=(bg_adap-bg_base)/bg_base*100 if bg_base else 0.0
+        formula={'target_latency_ms':a.latency_threshold_ms,'base_share':0.50,'latency_coefficient':0.20,'minimum_foreground_share':0.55,'maximum_foreground_share':0.90,'total_weight_budget':1000,'round_to_nearest':10}
+        if policy_path.is_file():
+            try:
+                saved=json.loads(policy_path.read_text(encoding='utf-8'))
+                if saved.get('status')=='accepted': formula.update(saved.get('formula',{}))
+            except (OSError,json.JSONDecodeError): pass
+        result={'generated_at':datetime.now().astimezone().isoformat(timespec='seconds'),'duration_seconds_per_run':a.duration,'repeats_per_policy':a.repeats,
+            'candidate_selection':selected_info,'baseline':{k:v for k,v in base.items() if k!='run_summaries'},
+            'adaptive':{k:v for k,v in adap.items() if k!='run_summaries'},'improvement_percent':changes,
+            'baseline_run_means_ms':base_means,'adaptive_run_means_ms':adap_means,'baseline_mean_95ci_ms':mean_ci(base_means),
+            'adaptive_mean_95ci_ms':mean_ci(adap_means),'mean_latency_reduction_95ci_ms':difference_ci(base_means,adap_means),
+            'background_chunks_completed_per_run':{'baseline_mean':bg_base,'adaptive_mean':bg_adap,'change_percent':bg_change},
+            'runs':{'selected_fixed':final_fixed['runs'],'adaptive':final_adaptive['runs']},
+            'legacy_reference':{'foreground_weight':600,'background_weight':100,'note':'Included as a candidate during preliminary selection; not assumed optimal.'},
+            'measurement':'Wall-clock latency of a bounded foreground CPU probe under background CPU contention. Background progress is counted as completed fixed-size CPU-work chunks.',
+            'policy_parameters_used':formula,
+            'interpretation':'Adaptive performance is compared against a fixed policy selected in separate preliminary runs. Results apply to this controlled workload and do not directly measure desktop-application response time.'}
+        results_path.write_text(json.dumps(result,indent=2),encoding='utf-8')
+        evaluator=Path(__file__).with_name('aegisos_evaluate_policy.py')
+        subprocess.run([sys.executable,str(evaluator),str(results_path),'--policy-path',str(policy_path),'--evaluation-path',str(evaluation_path),
+                        '--min-latency-improvement',str(a.min_latency_improvement),'--min-background-retention',str(a.min_background_retention)],check=True)
+        evaluation=json.loads(evaluation_path.read_text(encoding='utf-8'))
+        result['policy_evaluation']=evaluation
+        results_path.write_text(json.dumps(result,indent=2),encoding='utf-8')
+        lines=['# AegisOS Live Performance Evaluation','',f"Generated: {result['generated_at']}",f"Preliminary candidate repetitions: {a.repeats} per candidate; final repetitions: {a.repeats} per policy.",'',
+          '## Fixed-baseline selection','', 'Candidate fixed policies were tested in preliminary runs. Equal weights (500/500) establish the background-throughput reference. Candidates must retain the configured minimum percentage of that throughput; among eligible candidates, the one with the lowest p95 latency is selected. The final adaptive comparison uses fresh runs.', '',
+          '| Candidate | Foreground / background | p95 latency (ms) | Background chunks/run | Retention vs equal | Eligible |','|---|---:|---:|---:|---:|---|']
+        for x in selected_info['preliminary_results']:
+            retention='n/a' if x['background_retention_vs_equal_pct'] is None else f"{x['background_retention_vs_equal_pct']:.1f}%"
+            lines.append(f"| {x['name']} | {x['foreground_weight']} / {x['background_weight']} | {x['p95_ms']:.3f} | {x['mean_background_chunks_per_run']:.1f} | {retention} | {'Yes' if x['eligible'] else 'No'} |")
+        lines += ['',f"**Selected fixed baseline:** {selected['candidate']['name']} ({selected['candidate']['foreground']}/{selected['candidate']['background']}). {selection_note}",
+          f"**Selection valid:** {'Yes' if selection_valid else 'No — fallback used; interpret adaptive comparison cautiously.'}",'', '## Final fresh-run comparison','',
+          '| Metric | Selected fixed baseline | Adaptive | Adaptive change / improvement |','|---|---:|---:|---:|',
+          f"| Mean probe latency | {base['mean_ms']:.3f} ms | {adap['mean_ms']:.3f} ms | {changes['mean_ms']:.1f}% reduction |",
+          f"| P50 probe latency | {base['p50_ms']:.3f} ms | {adap['p50_ms']:.3f} ms | {changes['p50_ms']:.1f}% reduction |",
+          f"| P95 probe latency | {base['p95_ms']:.3f} ms | {adap['p95_ms']:.3f} ms | {changes['p95_ms']:.1f}% reduction |",
+          f"| Maximum probe latency | {base['max_ms']:.3f} ms | {adap['max_ms']:.3f} ms | {changes['max_ms']:.1f}% reduction |",
+          f"| Background chunks/run | {bg_base:.1f} | {bg_adap:.1f} | {bg_change:+.1f}% change |",'',
+          f"Mean latency reduction 95% interval: {result['mean_latency_reduction_95ci_ms']['low']:.3f} to {result['mean_latency_reduction_95ci_ms']['high']:.3f} ms.",'',
+          '## Decision and action','',f"**{evaluation['decision']}** — {evaluation['reason']}",evaluation.get('policy_action',''),'',
+          '## Interpretation','', 'The baseline is selected from measured fixed-weight candidates, not assumed optimal in advance. Preliminary selection data and final comparison data are separate. Acceptance thresholds are engineering criteria and must be justified for the intended workload. A positive result applies only to this synthetic probe/background workload; it is not a universal performance guarantee.', '',
+          '## Reproducibility files','', '- `comparison_results.json`: candidate selection, final metrics, run-level summaries, and policy decision.', '- `selected_fixed_baseline.json`: selected fixed pair and preliminary candidate evidence.', '- `policy_evaluation.json`: ACCEPT/REJECT/INCONCLUSIVE decision.', '- `selected_policy.json`: formula parameters promoted only after acceptance.', '- `live-probes-*.csv`, `live-background-*.csv`, `live-benchmark-events-*.jsonl`: raw measurements and events.']
+        report.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+        status('complete',f"Evaluation complete; adaptive policy decision: {evaluation['decision']}",phase='complete',repeats=a.repeats,duration_seconds=a.duration,
+               results_file=results_path.name,report_file=report.name,policy_decision=evaluation['decision'],selected_fixed_baseline=selected['candidate']['name'],
+               fixed_baseline_file=fixed_baseline_path.name,policy_evaluation_file=evaluation_path.name)
+        print(f"Evaluation complete. Selected fixed baseline: {selected['candidate']['name']} ({selected['candidate']['foreground']}/{selected['candidate']['background']})")
+        print(f"Adaptive policy decision: {evaluation['decision']}. Report: {report}")
+    except (RuntimeError,OSError,subprocess.CalledProcessError,json.JSONDecodeError,KeyError,ZeroDivisionError) as e:
+        status('error',str(e),phase='error')
+        print(f'AegisOS comparison error: {e}',file=sys.stderr)
+        return 2
+    return 0
+
+if __name__=='__main__': raise SystemExit(main())
